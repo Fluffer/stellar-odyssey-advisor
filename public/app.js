@@ -1,0 +1,1172 @@
+let autoTimer = null;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---- localStorage-backed "done" checkmarks (installs & merges rows) ----
+function loadDone() {
+  try { return new Set(JSON.parse(localStorage.getItem('advisor-done') || '[]')); }
+  catch (e) { return new Set(); }
+}
+function saveDone(set) {
+  try { localStorage.setItem('advisor-done', JSON.stringify(Array.from(set))); } catch (e) {}
+}
+function toggleDone(key, checked) {
+  const set = loadDone();
+  if (checked) set.add(key); else set.delete(key);
+  saveDone(set);
+  if (window.lastData) render(window.lastData);
+}
+function resetDone() {
+  try { localStorage.removeItem('advisor-done'); } catch (e) {}
+  if (window.lastData) render(window.lastData);
+}
+// Safely embed a string as a single-quoted JS literal inside an
+// HTML attribute that itself uses double quotes (e.g. onchange="...").
+function jsStr(s) {
+  return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+}
+
+// ---- generic sortable-table helper (click a <th> to sort) ----
+window.__tableRegistry = window.__tableRegistry || {};
+window.__tableSort = window.__tableSort || {};
+function tableRows(id) {
+  const reg = window.__tableRegistry[id];
+  if (!reg) return [];
+  let rows = reg.data.slice();
+  const sort = window.__tableSort[id];
+  if (sort) {
+    const col = reg.columns[sort.col];
+    rows.sort((a, b) => {
+      const av = col.getValue(a), bv = col.getValue(b);
+      if (av < bv) return sort.dir === 'asc' ? -1 : 1;
+      if (av > bv) return sort.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+  return rows;
+}
+function tbodyHtml(columns, rows) {
+  let html = '';
+  for (const row of rows) {
+    html += '<tr>';
+    for (const c of columns) html += '<td' + (c.numeric ? ' class="num"' : '') + '>' + c.render(row) + '</td>';
+    html += '</tr>';
+  }
+  return html;
+}
+function tableHtml(id, data, columns) {
+  window.__tableRegistry[id] = { data, columns };
+  const rows = tableRows(id);
+  const sort = window.__tableSort[id];
+  let html = '<div style="overflow-x:auto"><table class="tbl" id="' + id + '"><thead><tr>';
+  columns.forEach((c, i) => {
+    const active = sort && sort.col === i;
+    const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    html += '<th class="' + (c.numeric ? 'num' : '') + '" onclick="sortTable(' + jsStr(id) + ',' + i + ')">' + esc(c.label) + arrow + '</th>';
+  });
+  html += '</tr></thead><tbody>' + tbodyHtml(columns, rows) + '</tbody></table></div>';
+  return html;
+}
+function sortTable(id, col) {
+  const cur = window.__tableSort[id];
+  let dir = 'asc';
+  if (cur && cur.col === col) dir = cur.dir === 'asc' ? 'desc' : 'asc';
+  window.__tableSort[id] = { col, dir };
+  const reg = window.__tableRegistry[id];
+  const table = document.getElementById(id);
+  if (!reg || !table) return;
+  const rows = tableRows(id);
+  table.querySelector('tbody').innerHTML = tbodyHtml(reg.columns, rows);
+  table.querySelectorAll('th').forEach((th, i) => {
+    th.textContent = reg.columns[i].label + (i === col ? (dir === 'asc' ? ' ▲' : ' ▼') : '');
+  });
+}
+
+// ---- tab count badges (small <span class="tabcount"> inside maintabs buttons) ----
+function setTabCount(tab, n, tint) {
+  const btn = document.querySelector('.maintabs button[data-tab="' + tab + '"]');
+  if (!btn) return;
+  let span = btn.querySelector('.tabcount');
+  if (!n) { if (span) span.remove(); return; }
+  if (!span) {
+    span = document.createElement('span');
+    span.className = 'tabcount';
+    btn.appendChild(span);
+  }
+  span.textContent = n;
+  span.classList.toggle('bad', !!tint);
+}
+
+function dotColor(r) {
+  const m = { normal:'#9aa4b5', uncommon:'#4fc36a', rare:'#4f9cf5',
+    unique:'#a06cf0', epic:'#e0863c', legendary:'#e0b23c' };
+  return m[r] || '#888';
+}
+function actLabel(a) {
+  const m = { default: 'Default', exploring: 'Exploring', crafting: 'Crafting',
+    galaxyboss: 'Galaxy Boss', dungeons: 'Dungeons', voyager: 'Voyager' };
+  return m[a] || a;
+}
+
+const SHIP_SLOT_LABELS = {
+  weapon_slot: 'Weapon', shield_slot: 'Shield', engine_slot: 'Engine',
+  sensors_slot: 'Sensors', laser_slot: 'Laser', probes_slot: 'Probes'
+};
+function shipSlotLabel(slot) { return SHIP_SLOT_LABELS[slot] || slot; }
+
+// Item advisor: sortable table + recommendations list + cooldown/scan cards.
+// d.shipItems: { items: [...], cooldown: {...}, scan: {...} } (lib/ship-items.js).
+function renderShipItemAdvisor(si) {
+  if (!si) return '<div class="empty-note">No ship item data.</div>';
+  let html = '';
+  const cols = [
+    { label: 'Slot', numeric: false, getValue: it => it.slot,
+      render: it => '<b>' + esc(shipSlotLabel(it.slot)) + '</b>' },
+    { label: 'Item', numeric: false, getValue: it => it.name,
+      render: it => esc(it.name) + ' <span style="color:' + dotColor(it.rarity) + '">(' + esc(it.rarity) + ')</span>' +
+        (it.enhanced ? ' <span class="badge b-ok">enhanced</span>' : '') +
+        (it.anomaly ? ' <span class="badge b-warn">anomaly</span>' : '') },
+    { label: 'Lvl', numeric: true, getValue: it => it.level, render: it => it.level },
+    { label: 'Skill lvl', numeric: true, getValue: it => it.skillLevel,
+      render: it => esc(it.matchingSkill) + ' ' + it.skillLevel },
+    { label: 'Behind', numeric: true, getValue: it => it.levelsBehind,
+      render: it => it.levelsBehind > 0
+        ? ('<b style="color:' + (it.levelsBehind >= 5 ? 'var(--bad)' : 'var(--warn)') + '">' + it.levelsBehind + '</b>')
+        : '0' },
+    { label: 'Value', numeric: true, getValue: it => it.value, render: it => it.value + ' / ' + it.valueMaxForLevel },
+    { label: '% of max', numeric: true, getValue: it => it.valuePctOfMax, render: it => it.valuePctOfMax + '%' },
+    { label: 'Mods', numeric: false, getValue: it => it.bonuses.join(','),
+      render: it => it.bonuses.map(b => esc(b)).join(', ') || '<span style="color:var(--dim)">none</span>' },
+  ];
+  html += tableHtml('tbl-ship-items', si.items, cols);
+
+  html += '<h3 style="font-size:14px;color:var(--accent);margin:14px 0 8px">Recommendations</h3><div class="list">';
+  let any = false;
+  for (const it of si.items) {
+    for (const r of it.recommendations) {
+      any = true;
+      html += '<div class="row"><b>' + esc(shipSlotLabel(it.slot)) + '</b><span>' + esc(r) + '</span></div>';
+    }
+  }
+  if (!any) html += '<div class="empty-note">No item recommendations.</div>';
+  html += '</div>';
+
+  const c = si.cooldown;
+  html += '<h3 style="font-size:14px;color:var(--accent);margin:14px 0 8px">Engine cooldown</h3><div class="cards">';
+  html += card('Total reduction', c.d + '%' + (c.componentBreakdown.globalBoost ? ' <span style="font-size:11px;color:var(--dim)">(' + c.dBase + '% w/o boost)</span>' : ''));
+  html += card('Engine value', (c.componentBreakdown.engineValue / 100).toFixed(2) + '% <span style="font-size:11px;color:var(--dim)">(value ' + c.componentBreakdown.engineValue + ')</span>');
+  html += card('Cooldown mods', '+' + c.componentBreakdown.mods + '%');
+  html += card('Korin (equipped)', '+' + c.componentBreakdown.korin + '%');
+  if (c.componentBreakdown.globalBoost) {
+    html += card('Global boost', '+' + c.componentBreakdown.globalBoost + '% <span style="font-size:11px;color:var(--dim)">tier ' + c.componentBreakdown.globalBoostTier + ', ~' + c.componentBreakdown.globalBoostHoursLeft + 'h left</span>');
+  }
+  html += card('@10 ly', c.at10ly.seconds + 's' + (c.at10ly.floored ? ' <span class="badge b-warn">floor</span>' : '') +
+    (c.componentBreakdown.globalBoost ? ' <span style="font-size:11px;color:var(--dim)">(' + c.at10lyNoBoost.seconds + 's w/o boost)</span>' : ''));
+  html += card('@50 ly', c.at50ly.seconds + 's' + (c.at50ly.floored ? ' <span class="badge b-warn">floor</span>' : ''));
+  html += card('@100 ly', c.at100ly.seconds + 's' + (c.at100ly.floored ? ' <span class="badge b-warn">floor</span>' : ''));
+  html += '</div>';
+  html += '<div class="sub">Cooldown = 10 min &times; (1 + ly/100) &times; (1 &minus; total reduction%), hard floor 5 min. Floor breakpoint @10 ly: reduction &ge; ' + c.breakpointD10ly + '%' +
+    (c.flooredNowAt10ly ? ' &mdash; currently floored up to ~' + c.flooredUpToLy + ' ly' : '') + ' &mdash; ' +
+    (c.withCooldownModAt10ly
+      ? (c.flooredNowAt10ly
+        ? 'the global boost pins the floor for now; a cooldown mod only pays off once the boost lapses'
+        : 'a +10 cooldown mod would still help at 10 ly')
+      : 'cooldown is floored at 10 ly even without the boost; cooldown mods are wasted there, prefer scan reward') +
+    '</div>';
+
+  const s = si.scan;
+  html += '<h3 style="font-size:14px;color:var(--accent);margin:14px 0 8px">Scan reward</h3><div class="cards">';
+  html += card('Multiplier', '&times;' + s.multiplier.toFixed(4));
+  html += card('Sensors component', '+' + (s.sensorsComponent * 100).toFixed(2) + '%');
+  html += card('Mod component', '+' + (s.modComponent * 100).toFixed(2) + '%');
+  html += '</div>';
+
+  return html;
+}
+
+function renderGear(gear) {
+  let html = '<div class="sub">A non-empty activity group replaces the default group for that activity; empty groups inherit (voyager &larr; exploring &larr; default).</div>';
+  html += '<div class="grid">';
+  for (const it of gear) {
+    if (it.empty) {
+      html += '<div class="item"><h3>' + esc(it.slot) + '</h3><div class="meta">(no item equipped)</div></div>';
+      continue;
+    }
+    html += '<div class="item"><h3>' + esc(it.name) + '</h3>';
+    html += '<div class="meta">' + esc(it.slot) + ' &middot; ' + esc(it.category) + ' &middot; lvl ' + it.level + ' ' + esc(it.rarity) + '</div>';
+    for (const g of it.groups) {
+      const full = g.filled >= g.slots;
+      const style = g.inherited ? ' style="opacity:0.55"' : '';
+      html += '<div class="group"' + style + '><div class="group-head"><span>' + esc(actLabel(g.activity)) + '</span>';
+      if (g.inherited) {
+        html += '<span class="badge b-empty">inherits ' + esc(actLabel(g.inheritedFrom)) + '</span></div>';
+      } else {
+        const cls = g.filled === 0 ? 'b-empty' : (full ? 'b-ok' : 'b-warn');
+        html += '<span class="badge ' + cls + '">' + g.filled + '/' + g.slots + '</span></div>';
+        for (const c of g.catalysts) {
+          html += '<div class="cat"><span class="dot" style="background:' + dotColor(c.rarity) + '"></span>';
+          html += '<span class="rar" style="color:' + dotColor(c.rarity) + '">' + esc(c.stat) + '</span>';
+          html += '<span>' + c.range + '%</span>';
+          if (c.halved) html += '<span style="color:var(--dim)">(halved)</span>';
+          if (c.sameCount > 1) html += '<span style="color:var(--dim)">x' + c.sameCount + '</span>';
+          html += '<span class="info">' + esc(c.effText) + ' eff</span></div>';
+        }
+      }
+      if (g.poolCount > 0 && !full) html += '<div class="info" style="color:var(--dim);font-size:11px">' + g.poolCount + ' matching in inventory</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  return html + '</div>';
+}
+
+// Stable identity for one install/replace action, used for the "done"
+// checkmark and the new-since-last-analyze highlight.
+function installKey(variant, a) {
+  return 'i|' + variant + '|' + a.item + '|' + a.activity + '|' + (a.add.id || a.add.text) +
+    '|' + (a.remove ? (a.remove.id || a.remove.text) : '');
+}
+
+// Group install actions by activity tab.
+function renderInstalls(installs, freed, battleNote, gear, variant, doneSet, prevKeys) {
+  let html = '';
+  if (battleNote) html += '<div class="sub">' + esc(battleNote) + '</div>';
+
+  const byAct = {};
+  const order = ['default', 'exploring', 'crafting', 'galaxyboss', 'dungeons', 'voyager'];
+  for (const a of installs) {
+    (byAct[a.activity] = byAct[a.activity] || []).push(a);
+  }
+  // Which tabs exist on the equipped gear (all variants share the same tabs)?
+  const tabsInUse = new Set();
+  if (gear) {
+    for (const it of gear) {
+      if (it.empty || !it.groups) continue;
+      for (const g of it.groups) tabsInUse.add(g.activity);
+    }
+  }
+  const acts = order.filter(a => byAct[a] || tabsInUse.has(a))
+    .concat(Object.keys(byAct).filter(a => !order.includes(a)));
+  for (const act of acts) {
+    html += '<div class="plan-group"><h3>' + esc(actLabel(act)) + ' tab</h3><div class="list">';
+    if (byAct[act] && byAct[act].length) {
+      byAct[act].forEach(a => {
+        const key = installKey(variant, a);
+        const isDone = doneSet.has(key);
+        const isNew = !!prevKeys && !prevKeys.has(key);
+        html += '<div class="row' + (isDone ? ' done' : '') + (isNew ? ' new-row' : '') + '">';
+        html += '<input type="checkbox" class="donecheck" ' + (isDone ? 'checked' : '') +
+          ' onchange="toggleDone(' + jsStr(key) + ', this.checked)">';
+        html += '<span class="num">' + a.n + '.</span>';
+        html += '<b>' + esc(a.item) + '</b> ';
+        if (a.action === 'install') {
+          html += 'INSTALL ';
+        } else {
+          html += 'REPLACE <span style="color:var(--dim)">' + esc(a.remove.text) + '</span> WITH ';
+        }
+        html += '<span style="color:' + dotColor(a.add.rarity) + ';font-weight:600">' + esc(a.add.text) + '</span>';
+        if (isNew) html += '<span class="new-badge">new</span>';
+        if (a.npcDeltas) {
+          const parts = Object.keys(a.npcDeltas).map(npc => {
+            const d = a.npcDeltas[npc];
+            const col = d > 0 ? 'var(--good)' : (d < 0 ? 'var(--bad)' : 'var(--dim)');
+            return '<span style="color:' + col + '">' + esc(npc) + ' ' + (d >= 0 ? '+' : '') + d + '</span>';
+          });
+          html += '<span class="battle" style="font-size:11px">' + parts.join(' &middot; ') + '</span>';
+        }
+        html += '<span class="gain">+' + esc(a.gainText) + '</span></div>';
+      });
+    } else {
+      html += '<div class="empty-note">No changes needed &mdash; already optimal with current inventory.</div>';
+    }
+    html += '</div></div>';
+  }
+  if (freed && freed.length) {
+    html += '<div class="sub">Freed back to inventory: ' + esc(freed.join(', ')) + '</div>';
+  }
+  return html;
+}
+
+// One card per NPC: current battle-benchmark level -> projected level if
+// every action in the Full-explore plan above were applied, plus an avg card.
+function renderProjection(proj, battleBase) {
+  let html = '<h3 style="font-size:14px;color:var(--accent);margin:0 0 8px">Projected after full plan</h3>';
+  html += '<div class="cards">';
+  for (const npc of Object.keys(proj.npcLevels)) {
+    const base = battleBase ? battleBase[npc] : null;
+    const lvl = proj.npcLevels[npc];
+    const d = proj.deltas[npc];
+    const col = d > 0 ? 'var(--good)' : (d < 0 ? 'var(--bad)' : 'var(--dim)');
+    html += '<div class="card"><div class="k">' + esc(npc) + '</div><div class="v">' +
+      (base !== null && base !== undefined ? base : '?') + ' &rarr; ' + lvl +
+      ' <span style="font-size:12px;color:' + col + '">(' + (d >= 0 ? '+' : '') + d + ')</span></div></div>';
+  }
+  const avgCol = proj.avgDelta > 0 ? 'var(--good)' : (proj.avgDelta < 0 ? 'var(--bad)' : 'var(--dim)');
+  html += '<div class="card"><div class="k">Avg delta</div><div class="v" style="color:' + avgCol + '">' +
+    (proj.avgDelta >= 0 ? '+' : '') + proj.avgDelta + '</div></div>';
+  html += '</div>';
+  html += '<div class="sub">projection assumes every Full-explore action is applied</div>';
+  return html;
+}
+
+// d.overrideLosses entries: { item, slot, activity, currentText, inheritedText, lostText }.
+// A non-empty specialized group REPLACES (not adds to) whatever the item
+// would otherwise inherit in that context - these are cases where the
+// specialized group is worth less than what it overrides, so the player
+// would be better off emptying it instead.
+function renderOverrideLosses(list) {
+  if (!list || !list.length) return '';
+  let html = '<h2>Activity overrides losing value</h2><div class="list warnlist">';
+  for (const o of list) {
+    html += '<div class="row"><b>' + esc(o.item) + '</b> &mdash; ' + esc(actLabel(o.activity)) +
+      ' group (' + esc(o.currentText) + ') replaces its inherited ' + esc(o.inheritedText) +
+      ' &mdash; <span style="color:var(--bad)">losing ' + esc(o.lostText) + '</span>' +
+      '</div>';
+  }
+  return html + '</div>';
+}
+
+function renderWarnings(warnings) {
+  if (!warnings.length) return '<div class="empty-note">No cap violations.</div>';
+  let html = '<div class="list warnlist">';
+  for (const w of warnings) {
+    html += '<div class="row"><b>' + esc(w.stat) + '</b> (' + esc(w.ctx) + '): total ' + esc(w.totalText) +
+      ' &gt; cap ' + esc(w.capText) + ' &mdash; wasted ' + esc(w.wastedText) + '</div>';
+  }
+  return html + '</div>';
+}
+
+// Progress bars for every capped stat currently in use, grouped by context
+// (default first). d.capUsage entries: { ctx, stat, total, cap, totalText, capText }.
+function renderCapUsage(list) {
+  if (!list || !list.length) return '<div class="empty-note">No capped stats in use yet.</div>';
+  const byCtx = {};
+  for (const c of list) (byCtx[c.ctx] = byCtx[c.ctx] || []).push(c);
+  const ctxs = Object.keys(byCtx).sort((a, b) => (a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b)));
+  let html = '';
+  for (const ctx of ctxs) {
+    html += '<div class="sub" style="margin-top:10px;text-transform:capitalize">' + esc(actLabel(ctx)) + '</div><div class="caplist">';
+    for (const c of byCtx[ctx]) {
+      const ratio = c.total / c.cap * 100;
+      const width = Math.min(100, ratio);
+      const color = ratio > 100 ? 'var(--bad)' : (ratio >= 80 ? 'var(--warn)' : 'var(--good)');
+      html += '<div class="caprow"><span class="capbar-label">' + esc(c.stat.replaceAll('_', ' ')) +
+        ' <span style="color:var(--dim)">(' + esc(actLabel(c.ctx)) + ')</span></span>';
+      html += '<span class="capbar"><span class="capbar-fill" style="width:' + width.toFixed(1) + '%;background:' + color + '"></span></span>';
+      html += '<span class="capbar-text">' + esc(c.totalText) + ' / ' + esc(c.capText) + '</span></div>';
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+// Per-activity stat panel (like the game's player-page bonus display):
+// what is active during each activity, with the cap where one exists.
+// d.contextTotals: { ctx: [{ stat, category, total, totalText, cap, capText, relevant }] }
+function renderContextTotals(ct) {
+  if (!ct) return '';
+  const order = ['default', 'exploring', 'crafting', 'galaxyboss', 'dungeons', 'voyager'];
+  const catOrder = ['battling', 'boost', 'utility'];
+  let html = '<div class="ctxgrid">';
+  for (const ctx of order) {
+    const rows = ct[ctx];
+    if (!rows) continue;
+    html += '<div class="item"><h3 style="text-transform:capitalize">' + esc(actLabel(ctx)) + '</h3>';
+    if (!rows.length) {
+      html += '<div class="empty-note">no bonuses active</div></div>';
+      continue;
+    }
+    const byCat = {};
+    for (const r of rows) (byCat[r.category || 'other'] = byCat[r.category || 'other'] || []).push(r);
+    const cats = catOrder.filter(c => byCat[c]).concat(Object.keys(byCat).filter(c => !catOrder.includes(c)));
+    for (const cat of cats) {
+      html += '<div class="group-head" style="margin-top:6px"><span>' + esc(cat) + '</span></div>';
+      for (const r of byCat[cat]) {
+        const dimmed = !r.relevant;
+        const atCap = r.cap !== null && r.total >= r.cap - 0.001;
+        html += '<div class="cat"' + (dimmed ? ' style="opacity:.45"' : '') + '>';
+        html += '<span>' + esc(r.stat.replaceAll('_', ' ')) + '</span>';
+        html += '<span class="info"><b' + (atCap ? ' style="color:var(--warn)"' : '') + '>' + esc(r.totalText) + '</b>' +
+          (r.capText ? ' <span style="color:var(--dim)">/ ' + esc(r.capText) + (atCap ? ' MAX' : '') + '</span>' : '') +
+          (dimmed ? ' <span style="color:var(--dim)">(no effect here)</span>' : '') + '</span>';
+        html += '</div>';
+      }
+    }
+    html += '</div>';
+  }
+  return html + '</div>';
+}
+
+// Stable identity for one merge group, used for the "done" checkmark and
+// the new-since-last-analyze highlight.
+function mergeKey(plan, step, group) {
+  return 'm|' + plan.stat + '|' + plan.activity + '|' + step.from + '|' + group.ids.join(',');
+}
+
+function renderMerges(plans, player, reqs, doneSet, prevKeys) {
+  if (!plans.length) return '<div class="empty-note">No merges possible (need 5 of the same stat + rarity + activity).</div>';
+  let html = '<div class="sub">Crafting lvl ' + player.craftLevel + ' &rarr; merge bonus +' + player.rangeBonus +
+    ' &middot; success = base + ' + player.successBonus.toFixed(1) + '%</div>';
+  if (reqs && reqs.length) {
+    html += '<div class="sub">Tier requirements (perfect-legendary path): ' +
+      reqs.map(m => '<b>' + esc(m.rarity) + '</b> result &ge; ' + m.resultNeeded).join(' &middot; ') + '</div>';
+  }
+  for (const p of plans) {
+    html += '<div class="merge-plan"><h3>' + esc(p.stat) + ' <span style="color:var(--dim)">(' + esc(actLabel(p.activity)) + ')</span>' +
+      (p.chainGoal ? ' &mdash; goal: <span style="color:var(--warn)">&rarr; ' + esc(p.chainGoal) + '</span>' : '') + '</h3>';
+    for (const step of p.steps) {
+      const sameTier = step.from === step.to ? ' (range perfection)' : '';
+      html += '<div class="step"><div class="head"><b>' + esc(step.from) + ' &rarr; ' + esc(step.to) + sameTier + '</b>' +
+        ' &middot; ' + step.chance + '% success &middot; ' + step.qcPerMerge + ' quantum cores/merge' +
+        ' (+' + step.qcProtectPerMerge + ' protect)' +
+        (step.recommendProtect ? ' &middot; <span class="protect">PROTECT recommended</span>' : '') + '</div>';
+      for (const g of step.groups) {
+        const perfect = step.to === 'legendary' && g.result >= 100;
+        const key = mergeKey(p, step, g);
+        const isDone = doneSet.has(key);
+        const isNew = !!prevKeys && !prevKeys.has(key);
+        html += '<span class="merge-item' + (isDone ? ' done' : '') + (isNew ? ' new-row' : '') + '">';
+        html += '<input type="checkbox" class="donecheck" ' + (isDone ? 'checked' : '') +
+          ' onchange="toggleDone(' + jsStr(key) + ', this.checked)">';
+        html += '<span class="merge">[' + g.inputs.join(', ') + '] <span class="arrow">&rarr;</span> ' +
+          '<span class="res' + (perfect ? ' perfect' : '') + '">' + step.to + ' ' + g.result + (perfect ? ' PERFECT' : '') + '</span>';
+        if (g.pulled && g.pulled.length) {
+          for (const pu of g.pulled) {
+            html += ' <span style="color:var(--warn)">TAKE ' + esc(pu.text) + ' OUT OF ' + esc(pu.item) +
+              ' (' + esc(pu.activity) + ' tab) first &mdash; reinstall result there (' + esc(pu.reinstallText) + ' eff)</span>';
+          }
+        }
+        html += '</span>';
+        if (isNew) html += '<span class="new-badge">new</span>';
+        html += '</span>';
+      }
+      html += '</div>';
+    }
+    if (p.projectedLegendaries.length) {
+      html += '<div class="proj">projected legendaries: ' + esc(p.projectedLegendaries.join(', ')) +
+        ' (' + p.perfectCount + ' perfect)</div>';
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+// Walk lastData / prevData with the same key functions used above, so the
+// installs/merges tabs can flag rows that did not exist in the prior fetch.
+function computeInstallKeySet(data, variant) {
+  if (!data) return null;
+  const list = variant === 'full' ? data.installs : data.installsResources;
+  const set = new Set();
+  (list || []).forEach(a => set.add(installKey(variant, a)));
+  return set;
+}
+function computeMergeKeySet(data) {
+  if (!data) return null;
+  const set = new Set();
+  (data.mergePlans || []).forEach(plan => {
+    (plan.steps || []).forEach(step => {
+      (step.groups || []).forEach(group => set.add(mergeKey(plan, step, group)));
+    });
+  });
+  return set;
+}
+
+function fmtC(n) {
+  if (n === null || n === undefined) return '?';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(Math.round(n));
+}
+const SKILL_LABELS = {
+  efficiency: 'Efficiency', storage: 'Storage', maneuverability: 'Maneuverability',
+  critical_chance: 'Critical chance', critical_damage: 'Critical damage', dual_shot: 'Dual shot'
+};
+
+function renderUnits(u) {
+  let html = '';
+  html += '<h2>Droids &amp; clones</h2>';
+  html += '<div class="sub">Upgrade cost: 5000 &times; level &times; e^(0.15&times;level) credits per +0.1% step, per unit, per skill. New units start at 0%.</div>';
+  html += '<div class="cards">';
+  html += card('Credits', fmtC(u.credits));
+  html += card('Droids', u.droids.count + ' <span style="font-size:11px;color:var(--dim)">next: ' + (u.droids.nextPrice !== null ? fmtC(u.droids.nextPrice) : 'open trainer page') + '</span>');
+  html += card('Clones', u.clones.count + ' <span style="font-size:11px;color:var(--dim)">next: ' + (u.clones.nextPrice !== null ? fmtC(u.clones.nextPrice) : 'open trainer page') + '</span>');
+  html += '</div>';
+
+  // --- recommendation ---
+  html += '<h2>Recommendation</h2><div class="list">';
+  const cd = u.clones.damage;
+  if (u.clones.nextPrice !== null && cd.perPctUpgradeCost && cd.perPctBuyCost) {
+    const ratio = cd.perPctBuyCost / cd.perPctUpgradeCost;
+    html += '<div class="row"><span class="num">1</span><span><b>Clones:</b> skill upgrades currently give damage at <b>' + fmtC(cd.perPctUpgradeCost) + '</b> per +1%, buying the ' + (u.clones.count + 1) + 'th clone (incl. catch-up) at <b>' + fmtC(cd.perPctBuyCost) + '</b> per +1% &mdash; upgrades are <b style="color:var(--good)">' + ratio.toFixed(1) + 'x more efficient</b>. Raise <b>dual shot</b> first (highest damage per credit), then critical chance, then critical damage.</span></div>';
+    if (u.clones.damageBreakEvenLevel !== null) {
+      html += '<div class="row"><span class="num">2</span><span><b>Clone break-even: ' + u.clones.damageBreakEvenLevel + '%</b> &mdash; above this level an extra clone would give more damage per credit. You are at ' + u.clones.rows[0].level + '%, so <b>keep upgrading</b>' + (u.clones.nextPrice > u.credits ? ' (the ' + (u.clones.count + 1) + 'th clone costs ' + fmtC(u.clones.nextPrice) + ' anyway)' : '') + '.</span></div>';
+    }
+  } else {
+    html += '<div class="row"><span>Clone prices unknown &mdash; open the Battling trainer page in-game once so the advisor can capture them.</span></div>';
+  }
+  if (u.droids.nextPrice !== null && u.droids.breakEvenLevel !== null) {
+    html += '<div class="row"><span class="num">3</span><span><b>Droids:</b> upgrade until <b>' + u.droids.breakEvenLevel + '%</b> (you are at ' + u.droids.rows[0].level + '%) before the ' + (u.droids.count + 1) + 'th droid (' + fmtC(u.droids.nextPrice) + ' + ' + fmtC(u.droids.catchUpCost) + ' catch-up) becomes better value per skill point.</span></div>';
+  } else if (u.droids.nextPrice === null) {
+    html += '<div class="row"><span>Droid prices unknown &mdash; open the Gathering trainer page in-game once.</span></div>';
+  }
+  html += '</div>';
+
+  // --- clone damage impact ---
+  html += '<h2>Clone damage impact</h2><div class="cards">';
+  html += card('Total multiplier', cd.totalMultiplier.toFixed(3));
+  html += card('+1% all skills', '+' + cd.plusOnePctAll + '% dmg');
+  html += card('+' + (u.clones.count + 1) + 'th clone @ 0%', '+' + cd.eighthAtZero + '% dmg');
+  html += card('+' + (u.clones.count + 1) + 'th clone @ parity', '+' + cd.eighthAtParity + '% dmg');
+  html += '</div>';
+
+  // --- tables (real <table>s, click a header to sort) ---
+  const unitSkillColumns = withDamage => {
+    const cols = [
+      { label: 'Skill', numeric: false, getValue: r => SKILL_LABELS[r.skill] || r.skill,
+        render: r => '<b>' + esc(SKILL_LABELS[r.skill] || r.skill) + '</b>' + (r.uneven ? ' <span style="color:var(--warn)">(units differ)</span>' : '') },
+      { label: 'Level', numeric: true, getValue: r => r.level, render: r => r.level + '%' },
+      { label: '+0.1% all', numeric: true, getValue: r => r.costStepAll, render: r => fmtC(r.costStepAll) },
+      { label: '+1% all', numeric: true, getValue: r => r.costPlusOneAll, render: r => fmtC(r.costPlusOneAll) },
+      { label: 'Affordable', numeric: true, getValue: r => r.affordableStepsAll, render: r => '+' + (r.affordableStepsAll / 10).toFixed(1) + '%' },
+    ];
+    if (withDamage) {
+      cols.push({ label: '+dmg/0.1%', numeric: true, getValue: r => r.marginalDamage || 0,
+        render: r => r.marginalDamage !== null ? '+' + r.marginalDamage : '-' });
+    }
+    return cols;
+  };
+  html += '<h2>Clone skills (' + u.clones.count + ')</h2><div class="sub">per-skill upgrade costs across all clones (apply-to-all)</div>';
+  html += tableHtml('tbl-clone-skills', u.clones.rows, unitSkillColumns(true));
+  html += '<h2>Droid skills (' + u.droids.count + ')</h2><div class="sub">per-skill upgrade costs across all droids (apply-to-all)</div>';
+  html += tableHtml('tbl-droid-skills', u.droids.rows, unitSkillColumns(false));
+
+  // --- unit lists ---
+  const list = (title, units, skills) => {
+    let t = '<h2>' + title + '</h2><div class="list">';
+    for (const un of units) {
+      t += '<div class="row"><span style="min-width:110px"><b>' + esc(un.name) + '</b></span>';
+      for (const s of skills) t += '<span>' + esc(SKILL_LABELS[s] || s) + ' <b>' + un[s] + '%</b></span>';
+      t += '</div>';
+    }
+    return t + '</div>';
+  };
+  html += list('Your clones', u.clones.list, ['critical_chance', 'critical_damage', 'dual_shot']);
+  html += list('Your droids', u.droids.list, ['efficiency', 'storage', 'maneuverability']);
+  return html;
+}
+
+// Time to earn the remaining cores for maxing every unlocked skill, from
+// the user-tunable income rate (cores/hour from battling + daily bonus).
+function calcQcGap() {
+  const out = document.getElementById('qcGapTime');
+  const rateEl = document.getElementById('qcRate');
+  const dailyEl = document.getElementById('qcDaily');
+  const d = window.lastData;
+  if (!out || !rateEl || !dailyEl || !d || !d.tech || !d.tech.maxOut) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem('advisor-qc-rate') || 'null');
+    if (saved && !calcQcGap._loaded) {
+      calcQcGap._loaded = true;
+      rateEl.value = saved.rate;
+      dailyEl.value = saved.daily;
+    }
+  } catch (e) {}
+  const rate = parseFloat(rateEl.value) || 0;
+  const daily = parseFloat(dailyEl.value) || 0;
+  try { localStorage.setItem('advisor-qc-rate', JSON.stringify({ rate: rateEl.value, daily: dailyEl.value })); } catch (e) {}
+  const gap = d.tech.maxOut.coresGap;
+  const perDay = rate * 24 + daily;
+  if (gap <= 0) { out.textContent = 'done'; return; }
+  if (perDay <= 0) { out.textContent = 'never'; return; }
+  const days = gap / perDay;
+  out.textContent = days >= 2 ? Math.floor(days) + 'd ' + Math.round((days % 1) * 24) + 'h' : Math.round(days * 24) + 'h';
+}
+
+function renderTech(t) {
+  let html = '';
+  html += '<h2>Technology (skills)</h2>';
+  html += '<div class="sub">Upgrades cost quantum cores: level L &rarr; L+1 costs 2&times;(L+1) cores (cumulative L&times;(L+1)). Cap 100. A full reset costs 50 stellar tokens (premium) &mdash; avoid.</div>';
+  html += '<div class="cards">';
+  html += card('Quantum cores', t.quantumCores.toLocaleString());
+  if (t.battle) html += card('Avg max NPC level', t.battle.baselineAvg);
+  if (t.maxOut) {
+    html += card('QC to max all', fmtC(t.maxOut.coresToMaxAll) + ' <span style="font-size:11px;color:var(--dim)">' + t.maxOut.maxedCount + '/' + t.maxOut.unlockedCount + ' maxed</span>');
+    html += card('Gap after stock', fmtC(t.maxOut.coresGap));
+    html += '<div class="card"><div class="k">Time to cover gap</div><div class="v" id="qcGapTime">&mdash;</div>' +
+      '<div style="font-size:11px;color:var(--dim);margin-top:4px">' +
+      '<input type="number" id="qcRate" value="18" min="0" style="width:44px" onchange="calcQcGap()" oninput="calcQcGap()"> /h + ' +
+      '<input type="number" id="qcDaily" value="150" min="0" style="width:52px" onchange="calcQcGap()" oninput="calcQcGap()"> /day</div></div>';
+  }
+  html += '</div>';
+
+  if (t.battle && t.battle.rows.length) {
+    html += '<h2>Combat skill ranking (battle-simulated)</h2>';
+    html += '<div class="sub">+1 level of each skill, simulated: average max NPC level gained @ &ge;98% winrate across all 8 NPC types.</div>';
+    const combatCols = [
+      { label: 'Skill', numeric: false, getValue: r => r.key, render: r => '<b>' + esc(r.key.replaceAll('_', ' ')) + '</b>' },
+      { label: 'Level', numeric: true, getValue: r => r.level, render: r => r.level },
+      { label: 'Next QC', numeric: true, getValue: r => r.cost, render: r => r.cost + ' QC' },
+      { label: 'Gain', numeric: true, getValue: r => r.avgDelta, render: r => '<b style="color:var(--good)">+' + r.avgDelta + ' avg lvls</b>' },
+      { label: 'Lvls/core', numeric: true, getValue: r => r.levelsPerCore, render: r => '<span class="gain">' + r.levelsPerCore + '</span>' },
+    ];
+    html += tableHtml('tbl-combat-ranking', t.battle.rows, combatCols);
+  }
+
+  html += '<h2>Optimal spend of ' + t.quantumCores + ' QC</h2>';
+  if (t.allocation.length) {
+    html += '<div class="list">';
+    for (const a of t.allocation) {
+      html += '<div class="row"><span><b>' + esc(a.key.replaceAll('_', ' ')) + '</b>: ' + a.from + ' &rarr; ' + a.to + '</span><span class="gain">' + a.cost + ' QC</span></div>';
+    }
+    html += '<div class="sub">leftover: ' + t.leftoverCores + ' QC</div></div>';
+  } else if (t.battle && t.battle.rows.length) {
+    const cheapest = t.battle.rows[t.battle.rows.length - 1];
+    const best = t.battle.rows[0];
+    html += '<div class="row"><span>Not enough cores for any combat skill (best pick <b>' + esc(best.key.replaceAll('_', ' ')) + '</b> costs ' + best.cost + ' QC). Keep saving &mdash; cores come from battling drops and merges.</span></div>';
+  }
+
+  html += '<h2>All skills</h2>';
+  const skillCols = [
+    { label: 'Skill', numeric: false, getValue: s => s.label, render: s => '<b>' + esc(s.label) + '</b>' },
+    { label: 'Level', numeric: true, getValue: s => s.level, render: s => s.level + (s.maxed ? ' <span class="badge b-ok">MAX</span>' : '') },
+    { label: 'Next cost', numeric: true, getValue: s => (s.locked || s.maxed) ? -1 : (s.costNext || 0),
+      render: s => s.locked ? '-' : (s.maxed ? '-' : '<b>' + s.costNext + ' QC</b>') },
+    { label: 'To max', numeric: true, getValue: s => s.coresToMax === null ? -1 : s.coresToMax,
+      render: s => s.coresToMax === null ? '-' : (s.coresToMax === 0 ? '-' : fmtC(s.coresToMax) + ' QC') },
+    { label: 'Status', numeric: false, getValue: s => s.locked ? 'locked' : (s.maxed ? 'max' : (s.affordable ? 'affordable' : '')),
+      render: s => s.locked ? '<span class="badge b-empty">locked (Steam)</span>' :
+        (s.maxed ? '<span class="badge b-ok">MAX</span>' : (s.affordable ? '<span class="badge b-ok">affordable</span>' : '')) },
+    { label: 'Description', numeric: false, getValue: s => s.desc, render: s => '<span style="color:var(--dim);font-size:12px">' + esc(s.desc) + '</span>' },
+  ];
+  html += tableHtml('tbl-all-skills', t.skills, skillCols);
+  return html;
+}
+
+function fmtH(h) {
+  if (h === null || h === undefined) return '-';
+  if (h === Infinity) return 'never';
+  if (h < 48) return h + 'h';
+  return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+}
+
+function renderPets(p) {
+  let html = '';
+  html += '<h2>Pets</h2>';
+  html += '<div class="sub">XP/h = ceil((5 + boost) &times; (1 + tech/100) &times; (1 + level/10) &times; (1 + premium/100) &times; food/100). Food drops 5%/h while equipped (floor 50%); auto-feed refills to 100% when the next drop would fall below the slot threshold. Unequipped pets: food frozen, no XP.</div>';
+  html += '<div class="cards">';
+  html += card('Pet XP tech', p.techSkill + (p.techSkill >= 100 ? ' <span class="badge b-ok">MAX</span>' : ''));
+  html += card('Premium', p.premiumActive ? 'active <span style="font-size:11px;color:var(--dim)">+10% pet XP</span>' : 'inactive');
+  html += card('Pet food stock', p.petFood.toLocaleString() + ' <span style="font-size:11px;color:var(--dim)">burn ' + p.petFoodPerDay + '/day = ' + (p.petFoodDays !== null ? p.petFoodDays + 'd' : '-') + '</span>');
+  html += card('Equipped', p.pets.filter(function (x) { return x.equipped; }).length + ' / ' + p.pets.length);
+  html += '</div>';
+
+  if (p.korin) html += renderKorin(p.korin);
+
+  html += '<h2>All pets</h2>';
+  const petCols = [
+    { label: 'Pet', numeric: false, getValue: pet => pet.name, render: pet => '<b>' + esc(pet.name) + '</b>' },
+    { label: 'Slot', numeric: false, getValue: pet => pet.equipped ? pet.slotType : '~unequipped',
+      render: pet => pet.equipped ? esc(pet.slotType) : '<span class="badge b-empty">unequipped</span>' },
+    { label: 'Lvl', numeric: true, getValue: pet => pet.level, render: pet => pet.level },
+    { label: 'XP', numeric: true, getValue: pet => pet.currentXp, render: pet => pet.currentXp + '/' + pet.targetXp },
+    { label: 'Boost', numeric: true, getValue: pet => pet.boost, render: pet => pet.boost },
+    { label: 'Food', numeric: true, getValue: pet => pet.food, render: pet => pet.food + '%' + (pet.equipped ? ' <span style="color:var(--dim)">(avg ' + pet.avgFood + '%)</span>' : '') },
+    { label: 'XP/h', numeric: true, getValue: pet => pet.equipped ? pet.xpPerHourNow : -1,
+      render: pet => pet.equipped ? '<b>' + pet.xpPerHourNow + '</b>' : '-' },
+    { label: 'Next lvl', numeric: true, getValue: pet => pet.equipped ? (pet.hoursToLevel === Infinity ? 1e15 : pet.hoursToLevel) : 1e16,
+      render: pet => pet.equipped ? '<b style="color:var(--good)">' + fmtH(pet.hoursToLevel) + '</b>' : '-' },
+    { label: '+1 boost', numeric: true, getValue: pet => pet.equipped ? (pet.hoursSavedPlusOne || 0) : -1,
+      render: pet => pet.equipped ? (fmtH(pet.hoursToLevelPlusOne) + ' (' + (pet.hoursSavedPlusOne !== null ? '-' + pet.hoursSavedPlusOne + 'h' : '-') + ')') : '-' },
+    { label: 'Boost cost', numeric: true, getValue: pet => pet.costNextBoost,
+      render: pet => fmtC(pet.costNextBoost) + ' &times;16' + (pet.affordableBoost ? ' <span class="badge b-ok">affordable</span>' : ' <span class="badge b-warn">short ' + fmtC(pet.costNextBoost - pet.minResource) + '</span>') },
+  ];
+  html += tableHtml('tbl-all-pets', p.pets, petCols);
+
+  html += '<h2>Simulator</h2>';
+  html += '<div class="sub">Pick a pet and drag the sliders to simulate raising its XP boost and the slot auto-feed threshold (sliders start at the current values of the pet). A boost upgrade costs the SAME amount of EVERY one of the 16 common resources (copper, gold, platinum, silver, carbon, nitrogen, sulfur, water, ammonia, helium, hydrogen, methane, diamond, emerald, ruby, sapphire).</div>';
+  const eq = p.pets.filter(function (x) { return x.equipped; });
+  html += '<div class="list">';
+  html += '<div class="row"><span style="min-width:90px"><b>Pet</b></span><select id="petSelect" onchange="simPet()" class="pet-input">';
+  for (const pet of eq) html += '<option value="' + esc(pet.id) + '">' + esc(pet.name) + ' (boost ' + pet.boost + ', food ' + pet.food + '%)</option>';
+  html += '</select></div>';
+  html += '<div class="row"><span style="min-width:90px"><b>Boost</b></span><input type="range" id="petBoost" min="0" max="45" value="0" oninput="simPet()" style="width:260px"> <span id="petBoostVal" style="min-width:110px;display:inline-block"></span></div>';
+  html += '<div class="row"><span style="min-width:90px"><b>Auto-feed</b></span><input type="range" id="petFeed" min="50" max="100" step="5" value="50" oninput="simPet()" style="width:260px"> <span id="petFeedVal" style="min-width:110px;display:inline-block"></span></div>';
+  html += '</div>';
+  html += '<div id="petSimOut" class="list" style="margin-top:10px"></div>';
+  return html;
+}
+
+// Korin (pet_type 'generator'): converts normal warp capsules into enhanced
+// warp capsules. See lib/pets.js for the underlying formulas.
+function renderKorin(k) {
+  const dustLimited = k.dustCostPerCapsule > 0 ? Math.floor(k.dust / k.dustCostPerCapsule) : 0;
+  const limitedBy = k.capsules <= dustLimited ? 'capsule stock' : 'dust';
+  let html = '<h2>Korin &mdash; warp capsule enhancement</h2>';
+  html += '<div class="cards">';
+  html += card('Korin level', k.level);
+  html += card('Cost/capsule', fmtC(k.dustCostPerCapsule) + ' <span style="font-size:11px;color:var(--dim)">dust</span>');
+  html += card('Capsule stock', k.capsules.toLocaleString() +
+    ' <span style="font-size:11px;color:var(--dim)">normal / ' + k.enhancedCapsules.toLocaleString() + ' enhanced</span>');
+  html += card('Affordable now', k.affordableNow.toLocaleString() +
+    ' <span style="font-size:11px;color:var(--dim)">(' + limitedBy + ' limited)</span>');
+  html += card('Fuel per enhanced', (k.fuelPerEnhanced !== null ? k.fuelPerEnhanced.toLocaleString() : '?') +
+    ' fuel <span style="font-size:11px;color:var(--dim)">(' + k.fuelMultiplier.toFixed(1) + 'x max)</span>');
+  html += card('Engine cooldown', '&minus;' + k.cooldownReductionPct + '%');
+  html += '</div>';
+  html += '<div class="sub">next level: cost ' + fmtC(k.nextLevel.dustCostPerCapsule) + '/capsule, ' +
+    k.nextLevel.fuelMultiplier.toFixed(1) + 'x fuel</div>';
+  return html;
+}
+
+function simPet() {
+  const d = window.lastData;
+  if (!d || !d.pets) return;
+  const p = d.pets;
+  const sel = document.getElementById('petSelect');
+  const boostEl = document.getElementById('petBoost');
+  const feedEl = document.getElementById('petFeed');
+  const out = document.getElementById('petSimOut');
+  if (!sel || !out || !boostEl || !feedEl) return;
+  const pet = p.pets.find(function (x) { return x.id === sel.value; });
+  if (!pet) return;
+  // When switching pets (or first render) sync the sliders to the current
+  // boost / auto-feed threshold of that pet. The boost slider can never go
+  // below the current boost - simulating a downgrade makes no sense.
+  // Update the slider bounds BEFORE assigning the value: a range input
+  // clamps assignments to its current min/max, so setting the value first
+  // would clamp it to the PREVIOUS pet's range when switching pets.
+  boostEl.min = pet.boost;
+  boostEl.max = pet.boost + 15;
+  if (window.petSimId !== sel.value) {
+    window.petSimId = sel.value;
+    boostEl.value = pet.boost;
+    feedEl.value = pet.autofeedLimit;
+  }
+  if (parseInt(boostEl.value, 10) < pet.boost) boostEl.value = pet.boost;
+  const boost = parseInt(boostEl.value, 10);
+  const limit = parseInt(feedEl.value, 10);
+  document.getElementById('petBoostVal').textContent = boost + (boost === pet.boost ? ' (current)' : ' (+' + (boost - pet.boost) + ')');
+  document.getElementById('petFeedVal').textContent = limit + '%' + (limit === pet.autofeedLimit ? ' (current)' : '');
+
+  if (!pet.equipped) {
+    out.innerHTML = '<div class="row">' + esc(pet.name) + ' is not equipped - it earns no XP and its food is frozen.</div>';
+    return;
+  }
+  const hours = PetMath.petHoursToNextLevel(pet.level, pet.currentXp, boost, pet.food, pet.autofeed, limit, p.techSkill, p.premiumActive);
+  const hoursNow = pet.hoursToLevel;
+  const saved = hoursNow !== null ? hoursNow - hours : null;
+
+  // Boost cost: the SAME amount of EVERY common resource.
+  const cost = boost > pet.boost ? PetMath.petXpBoostCostCumulative(pet.boost, boost) : 0;
+  const entries = Object.entries(p.resources || {});
+  const short = cost > 0 ? entries.filter(function (e) { return e[1] < cost; }) : [];
+
+  // Pet food: every equipped pet auto-feeds from the same stock. The
+  // selected pet uses the simulated threshold, the others their current one.
+  const cycleH = function (l) { return (100 - l) / 5 + 1; };
+  let perDay = 0, count = 0;
+  for (const q of p.pets) {
+    if (!q.equipped) continue;
+    count++;
+    perDay += 24 / cycleH(q.id === pet.id ? limit : q.autofeedLimit);
+  }
+  const days = perDay > 0 ? p.petFood / perDay : Infinity;
+
+  let html = '';
+  html += '<div class="row"><span><b>' + esc(pet.name) + '</b> lvl ' + pet.level + ' &rarr; ' + (pet.level + 1) + '</span>';
+  html += '<span>XP/h right now (food ' + pet.food + '%): <b>' + PetMath.petXpPerHour(pet.level, boost, pet.food, p.techSkill, p.premiumActive) + '</b></span>';
+  html += '<span>avg food over cycle: <b>' + ((100 + limit) / 2) + '%</b></span>';
+  html += '<span>time to next level: <b style="color:var(--good)">' + fmtH(hours) + '</b>' + (saved !== null && saved !== 0 ? ' <span class="gain">' + (saved > 0 ? '-' + fmtH(saved) : '+' + fmtH(-saved)) + ' vs current</span>' : '') + '</span></div>';
+
+  html += '<div class="row"><span>boost upgrade cost: <b>' + (cost > 0 ? fmtC(cost) + ' of EACH of the ' + entries.length + ' resources' : '-') + '</b>';
+  if (cost > 0) {
+    if (!short.length) html += ' <span class="badge b-ok">affordable - all ' + entries.length + ' resources have enough</span>';
+    else html += ' <span class="badge b-warn">' + short.length + ' of ' + entries.length + ' resources short:</span> <span style="color:var(--dim)">' + short.map(function (e) { return e[0] + ' (' + fmtC(e[1]) + ' / need ' + fmtC(cost - e[1]) + ' more)'; }).join(', ') + '</span>';
+  }
+  html += '</div>';
+
+  html += '<div class="row"><span>pet food: <b>' + count + ' equipped pets burn ' + perDay.toFixed(1) + '/day</b>' + (p.petFoodPerDay !== undefined && Math.abs(perDay - p.petFoodPerDay) > 0.05 ? ' <span style="color:var(--dim)">(currently ' + p.petFoodPerDay.toFixed(1) + '/day)</span>' : '') + '</span>';
+  html += '<span style="color:var(--dim)">' + p.petFood.toLocaleString() + ' stocked = ' + (days === Infinity ? 'no consumption' : Math.floor(days) + ' days') + '</span></div>';
+  out.innerHTML = html;
+}
+
+const INV_RARITIES = ['normal', 'uncommon', 'rare', 'unique', 'epic', 'legendary'];
+const INV_ACTIVITIES = ['default', 'exploring', 'crafting', 'galaxyboss', 'dungeons', 'voyager'];
+
+// Filter state lives on window so it survives re-renders (tab switches,
+// refresh) the same way window.planVariant / window.activeTab do.
+function setInvFilter(field, value) {
+  window.invFilter = window.invFilter || { text: '', rarity: 'all', activity: 'all', sellOnly: false };
+  window.invFilter[field] = value;
+  if (window.lastData) render(window.lastData);
+}
+
+function invUseBadge(it) {
+  if (it.locked) return '<span class="badge b-empty">locked</span>';
+  if (it.onMarket) return '<span class="badge b-empty">market</span>';
+  if (it.plannedUse === 'install') return '<span class="badge b-ok">install</span>';
+  if (it.plannedUse === 'merge') return '<span class="badge b-warn">merge</span>';
+  return '<span class="badge b-empty">-</span>';
+}
+
+function renderInventory(inv) {
+  const f = window.invFilter = window.invFilter || { text: '', rarity: 'all', activity: 'all', sellOnly: false };
+  let html = '<div class="cards">';
+  html += card('Total', inv.counts.total);
+  html += card('Planned installs', inv.counts.planned);
+  html += card('Merge fodder', inv.counts.mergeFodder);
+  html += card('Sell candidates', inv.counts.sellCandidates);
+  html += '</div>';
+
+  html += '<div class="toolbar" style="margin-bottom:10px">';
+  html += '<input type="text" placeholder="filter stat..." value="' + esc(f.text) +
+    '" onchange="setInvFilter(&quot;text&quot;, this.value)" style="padding:7px 10px;border-radius:8px;' +
+    'border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:13px">';
+  html += '<select class="pet-input" onchange="setInvFilter(&quot;rarity&quot;, this.value)">';
+  html += '<option value="all"' + (f.rarity === 'all' ? ' selected' : '') + '>All rarities</option>';
+  INV_RARITIES.forEach(r => {
+    html += '<option value="' + r + '"' + (f.rarity === r ? ' selected' : '') + '>' + r + '</option>';
+  });
+  html += '</select>';
+  html += '<select class="pet-input" onchange="setInvFilter(&quot;activity&quot;, this.value)">';
+  html += '<option value="all"' + (f.activity === 'all' ? ' selected' : '') + '>All activities</option>';
+  INV_ACTIVITIES.forEach(a => {
+    html += '<option value="' + a + '"' + (f.activity === a ? ' selected' : '') + '>' + esc(actLabel(a)) + '</option>';
+  });
+  html += '</select>';
+  html += '<label style="color:var(--dim);font-size:12px"><input type="checkbox" ' +
+    (f.sellOnly ? 'checked' : '') + ' onchange="setInvFilter(&quot;sellOnly&quot;, this.checked)"> sell candidates only</label>';
+  html += '</div>';
+
+  let items = inv.items;
+  if (f.text) {
+    const q = f.text.toLowerCase();
+    items = items.filter(it => it.stat.toLowerCase().includes(q));
+  }
+  if (f.rarity !== 'all') items = items.filter(it => it.rarity === f.rarity);
+  if (f.activity !== 'all') items = items.filter(it => it.activity === f.activity);
+  if (f.sellOnly) items = items.filter(it => it.sellCandidate);
+
+  const cols = [
+    { label: 'Stat', numeric: false, getValue: it => it.stat,
+      render: it => '<b>' + esc(it.stat.replaceAll('_', ' ')) + '</b>' },
+    { label: 'Rarity', numeric: false, getValue: it => it.rarity,
+      render: it => '<span class="dot" style="background:' + dotColor(it.rarity) +
+        ';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px"></span>' +
+        '<span style="color:' + dotColor(it.rarity) + '">' + esc(it.rarity) + '</span>' },
+    { label: 'Range', numeric: true, getValue: it => it.range, render: it => it.range + '%' },
+    { label: 'Activity', numeric: false, getValue: it => it.activity, render: it => esc(actLabel(it.activity)) },
+    { label: 'Category', numeric: false, getValue: it => it.category, render: it => esc(it.category) },
+    { label: 'Value', numeric: true, getValue: it => it.value, render: it => it.value.toFixed(2) },
+    { label: 'Use', numeric: false, getValue: it => it.plannedUse || (it.locked ? 'locked' : (it.onMarket ? 'market' : '')),
+      render: it => invUseBadge(it) },
+    { label: 'Sell', numeric: false, getValue: it => it.sellCandidate ? 1 : 0,
+      render: it => it.sellCandidate ? '<span class="badge b-warn" title="' + esc(it.sellReason) + '">sell</span>' : '' },
+  ];
+  html += tableHtml('tbl-inventory', items, cols);
+  return html;
+}
+
+// ---- Materials tab: blueprint material requirements vs stock ----
+function materialCols(showFarm) {
+  const cols = [
+    { label: 'Material', numeric: false, getValue: r => r.material, render: r => '<b>' + esc(r.material) + '</b>' },
+    { label: 'Stock', numeric: true, getValue: r => r.stock, render: r => r.stock.toLocaleString() },
+    { label: 'Need/craft', numeric: true, getValue: r => r.neededPerCraftAll, render: r => r.neededPerCraftAll.toLocaleString() },
+    { label: 'Need all uses', numeric: true, getValue: r => r.neededAllUses, render: r => r.neededAllUses.toLocaleString() },
+    { label: 'Deficit', numeric: true, getValue: r => r.deficit,
+      render: r => r.deficit > 0 ? '<b style="color:var(--bad)">' + r.deficit.toLocaleString() + '</b>' : '0' },
+  ];
+  if (showFarm) {
+    cols.push({ label: 'Farm', numeric: false, getValue: r => r.npc || '',
+      render: r => r.npc ? (esc(r.npc) + ' (' + esc(r.location) + ')') : '-' });
+  }
+  return cols;
+}
+
+function renderMaterials(m) {
+  let html = '';
+  html += '<div class="cards">';
+  html += card('Materials in deficit', m.totals.deficitCount);
+  html += card('Scraps needed (all uses)', fmtC(m.totals.scrapsNeededAllUses));
+  html += card('Blueprints included', m.totals.blueprintsIncluded);
+  html += '</div>';
+
+  html += '<h2>NPC drop materials</h2>';
+  html += '<div class="sub">farm the listed NPC at the listed location; per-kill drop amounts are not modeled &mdash; only stock vs need is shown</div>';
+  html += tableHtml('tbl-mat-npc', m.npcDrops, materialCols(true));
+
+  html += '<h2>Laboratory materials</h2>';
+  html += '<div class="sub">produced in the laboratory/base, not farmed from NPCs</div>';
+  html += tableHtml('tbl-mat-lab', m.labMaterials, materialCols(false));
+
+  html += '<h2>Other</h2>';
+  html += tableHtml('tbl-mat-other', m.other, materialCols(false));
+
+  return html;
+}
+
+function renderSummary(p, prevP) {
+  const delta = key => {
+    if (!prevP || prevP[key] === undefined || prevP[key] === null) return '';
+    const d = p[key] - prevP[key];
+    if (!d) return '';
+    const col = d > 0 ? 'var(--good)' : 'var(--bad)';
+    const txt = (d > 0 ? '+' : '-') + fmtC(Math.abs(d));
+    return ' <span style="color:' + col + ';font-size:11px;font-weight:700">' + txt + '</span>';
+  };
+  return card('Crafting lvl', p.craftLevel + ' <span style="font-size:11px;color:var(--dim)">' + p.currentXp + '/' + p.targetXp + ' xp</span>') +
+    card('Dust', p.dust.toLocaleString() + delta('dust')) +
+    card('Catalyst parts', p.parts.toLocaleString() + delta('parts')) +
+    card('Quantum cores', p.qc.toLocaleString() + delta('qc')) +
+    card('Installed', p.installedCount) +
+    card('Unequipped', p.unequippedCount);
+}
+function card(k, v) { return '<div class="card"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+
+function render(d) {
+  const variant = window.planVariant || 'full';
+  const tab = window.activeTab || 'gear';
+  const doneSet = loadDone();
+  if (d) {
+    document.getElementById('summary').innerHTML = renderSummary(d.player, window.prevData ? window.prevData.player : null);
+    setTabCount('battle', (d.warnings || []).length, true);
+    const curList = variant === 'full' ? d.installs : d.installsResources;
+    setTabCount('installs', (curList || []).length, false);
+    setTabCount('merges', (d.mergePlans || []).length, false);
+    setTabCount('inventory', d.inventory ? d.inventory.counts.sellCandidates : 0, true);
+    setTabCount('materials', d.materials ? d.materials.totals.deficitCount : 0, true);
+  }
+  let html = '';
+  if (tab === 'history') {
+    html = '<div class="empty-note">Loading history...</div>';
+    document.getElementById('content').innerHTML = html;
+    document.querySelectorAll('.maintabs button').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    loadHistory();
+    return;
+  }
+  if (tab === 'gear') {
+    html += '<h2>Item advisor</h2>' + renderShipItemAdvisor(d.shipItems);
+    html += '<h2>Equipped gear</h2>' + renderGear(d.gear);
+  } else if (tab === 'battle') {
+    if (d.battleBase) {
+      html += '<h2>Current battle benchmark</h2><div class="sub">max NPC level @ &ge;98% winrate (squadron boost included)</div>';
+      html += '<div class="cards">' + Object.entries(d.battleBase).map(([npc, lvl]) =>
+        '<div class="card"><div class="k">' + esc(npc) + '</div><div class="v">' + lvl + '</div></div>').join('') + '</div>';
+    }
+    html += '<h2>Active bonuses per activity</h2>';
+    html += '<div class="sub">what actually applies during each activity (a non-empty activity group replaces the default group for that item; empty groups inherit). Capped stats show current / cap.</div>';
+    html += renderContextTotals(d.contextTotals);
+    html += '<h2>Stat caps</h2>' + renderCapUsage(d.capUsage);
+    html += '<h2>Cap warnings</h2>' + renderWarnings(d.warnings);
+    html += renderOverrideLosses(d.overrideLosses);
+  } else if (tab === 'installs') {
+    const labels = {
+      full: 'Variant A: full explore <span style="font-weight:400">(default: general stats; all specialized tabs filled)</span>',
+      resources: 'Variant B: full resources <span style="font-weight:400">(default slots = gathering only; all specialized tabs filled)</span>',
+    };
+    html += '<h2>Install / replace plan &mdash; ' + labels[variant] + '</h2>';
+    if (d.projection) html += renderProjection(d.projection, d.battleBase);
+    html += '<div class="toolbar" style="margin-bottom:6px">' +
+      '<button class="ghost ' + (variant === 'full' ? 'active' : '') + '" onclick="setVariant(&quot;full&quot;)">Full explore</button>' +
+      '<button class="ghost ' + (variant === 'resources' ? 'active' : '') + '" onclick="setVariant(&quot;resources&quot;)">Full resources</button>' +
+      '<button class="ghost" style="margin-left:auto" onclick="resetDone()">Reset checkmarks</button></div>';
+    const planList = variant === 'full' ? d.installs
+      : d.installsResources;
+    const prevInstallKeys = computeInstallKeySet(window.prevData, variant);
+    html += renderInstalls(planList, d.freedTexts, d.battleNote, d.gear, variant, doneSet, prevInstallKeys);
+  } else if (tab === 'merges') {
+    html += '<h2>Merge plan</h2>';
+    html += '<div class="toolbar" style="margin-bottom:6px"><button class="ghost" onclick="resetDone()">Reset checkmarks</button></div>';
+    const prevMergeKeys = computeMergeKeySet(window.prevData);
+    html += renderMerges(d.mergePlans, d.player, d.mergeRequirements, doneSet, prevMergeKeys);
+  } else if (tab === 'units') {
+    html += renderUnits(d.units);
+  } else if (tab === 'tech') {
+    html += renderTech(d.tech);
+    setTimeout(calcQcGap, 0);
+  } else if (tab === 'pets') {
+    html += renderPets(d.pets);
+    setTimeout(simPet, 0);
+  } else if (tab === 'inventory') {
+    html += '<h2>Catalyst inventory</h2>' + renderInventory(d.inventory);
+  } else if (tab === 'materials') {
+    html += '<h2>Materials</h2>' + renderMaterials(d.materials);
+  }
+  document.getElementById('content').innerHTML = html;
+  document.querySelectorAll('.maintabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+}
+
+async function refresh() {
+  const btn = document.getElementById('refresh');
+  const status = document.getElementById('status');
+  if (window.lastData) window.prevData = window.lastData;
+  btn.disabled = true;
+  status.textContent = ' reading game state...';
+  const t0 = Date.now();
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(function () { ctrl.abort(); }, 90000);
+    const r = await fetch('/api/analyze', { signal: ctrl.signal });
+    clearTimeout(to);
+    const d = await r.json();
+    if (d.error) { status.textContent = ' error: ' + d.error; }
+    else {
+      window.lastData = d;
+      try { render(d); status.textContent = ' updated ' + new Date().toLocaleTimeString() + ' (' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'; status.style.color = ''; }
+      catch (e) { status.textContent = ' render error: ' + e.message; console.error(e); }
+    }
+  } catch (e) {
+    status.textContent = ' failed: ' + (e.name === 'AbortError' ? 'timed out after 90s' : e.message);
+  }
+  btn.disabled = false;
+}
+function toggleAuto(on) {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (on) { refresh(); autoTimer = setInterval(refresh, 60000); }
+}
+function setTab(t) {
+  window.activeTab = t;
+  // The history tab has no dependency on an analyze result, so it must
+  // render even before the user has ever clicked "Analyze now".
+  if (window.lastData || t === 'history') render(window.lastData || null);
+}
+function setVariant(v) {
+  window.planVariant = v;
+  if (window.lastData) render(window.lastData);
+}
+
+async function loadLast() {
+  const status = document.getElementById('status');
+  try {
+    const r = await fetch('/api/last');
+    const d = await r.json();
+    if (d && !d.empty && !d.error) {
+      window.lastData = d;
+      render(d);
+      const when = d.capturedAt ? new Date(d.capturedAt).toLocaleString() : 'unknown time';
+      status.textContent = ' showing snapshot from ' + when + ' — click "Analyze now" for fresh data';
+      status.style.color = 'var(--warn)';
+    }
+  } catch (e) { /* no snapshot yet -- keep the "Click Analyze now" empty-note */ }
+}
+
+const HISTORY_METRICS = [
+  { key: 'battleAvg', label: 'Battle avg level', fmt: v => String(v) },
+  { key: 'craftLevel', label: 'Craft level', fmt: v => String(v) },
+  { key: 'dust', label: 'Cosmic dust', fmt: fmtC },
+  { key: 'qc', label: 'Quantum cores', fmt: fmtC },
+  { key: 'credits', label: 'Credits', fmt: fmtC },
+  { key: 'parts', label: 'Catalyst parts', fmt: fmtC },
+  { key: 'installedCount', label: 'Installed catalysts', fmt: v => String(v) },
+  { key: 'unequippedCount', label: 'Unequipped catalysts', fmt: v => String(v) },
+  { key: 'petLevelSum', label: 'Pet levels (sum)', fmt: v => String(v) },
+];
+
+function svgChart(points, fmt) {
+  const W = 280, H = 80, PAD = 8;
+  const times = points.map(p => new Date(p.t).getTime());
+  const t0 = times[0], t1 = times[times.length - 1];
+  const tSpan = t1 - t0 || 1;
+  const vals = points.filter(p => p.v !== null && p.v !== undefined).map(p => p.v);
+  const vMin = Math.min.apply(null, vals), vMax = Math.max.apply(null, vals);
+  const flat = vMax === vMin;
+  const x = i => PAD + (times[i] - t0) / tSpan * (W - 2 * PAD);
+  const y = v => flat ? H / 2 : (H - PAD) - (v - vMin) / (vMax - vMin) * (H - 2 * PAD);
+
+  // Null values break the line into separate polylines instead of
+  // interpolating across a missing data point.
+  const segments = [];
+  let cur = [];
+  points.forEach((p, i) => {
+    if (p.v === null || p.v === undefined) {
+      if (cur.length) segments.push(cur);
+      cur = [];
+    } else {
+      cur.push(x(i).toFixed(1) + ',' + y(p.v).toFixed(1));
+    }
+  });
+  if (cur.length) segments.push(cur);
+
+  let svg = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">';
+  for (const seg of segments) {
+    svg += '<polyline points="' + seg.join(' ') + '" fill="none" stroke="var(--accent)" stroke-width="2"/>';
+  }
+  if (flat) {
+    svg += '<text x="' + (W - 2) + '" y="' + (H / 2 - 4) + '" font-size="10" fill="var(--dim)" text-anchor="end">' + esc(fmt(vMax)) + '</text>';
+  } else {
+    svg += '<text x="' + (W - 2) + '" y="10" font-size="10" fill="var(--dim)" text-anchor="end">' + esc(fmt(vMax)) + '</text>';
+    svg += '<text x="' + (W - 2) + '" y="' + (H - 2) + '" font-size="10" fill="var(--dim)" text-anchor="end">' + esc(fmt(vMin)) + '</text>';
+  }
+  svg += '</svg>';
+  const firstDate = new Date(points[0].t).toLocaleDateString();
+  const lastDate = new Date(points[points.length - 1].t).toLocaleDateString();
+  return '<div class="chart-svg-wrap">' + svg + '</div>' +
+    '<div class="chart-dates"><span>' + esc(firstDate) + '</span><span>' + esc(lastDate) + '</span></div>';
+}
+
+function chartCard(m, entries) {
+  const points = entries.map(e => ({ t: e.capturedAt, v: e[m.key] === undefined ? null : e[m.key] }));
+  const nonNull = points.filter(p => p.v !== null && p.v !== undefined);
+  if (!nonNull.length) return '';
+  const latest = nonNull[nonNull.length - 1].v;
+  const first = nonNull[0].v;
+  const delta = latest - first;
+  const deltaColor = delta > 0 ? 'var(--good)' : (delta < 0 ? 'var(--bad)' : 'var(--dim)');
+  const deltaText = nonNull.length < 2 ? '' : (delta >= 0 ? '+' : '') + (Number.isInteger(delta) ? delta : delta.toFixed(1));
+  const body = nonNull.length < 2
+    ? '<div class="chart-single">' + esc(m.fmt(latest)) + '</div><div class="sub" style="margin:2px 0 0">need more snapshots for a trend</div>'
+    : svgChart(points, m.fmt);
+  return '<div class="chart-card"><div class="chart-head"><span class="chart-label">' + esc(m.label) + '</span>' +
+    '<span class="chart-value">' + esc(m.fmt(latest)) + '</span>' +
+    (deltaText ? '<span class="chart-delta" style="color:' + deltaColor + '">' + esc(deltaText) + '</span>' : '') +
+    '</div>' + body + '</div>';
+}
+
+function renderHistory(entries) {
+  if (!entries.length) return '<div class="empty-note">No snapshots yet &mdash; click "Analyze now" to capture the first one.</div>';
+  let html = '<div class="charts">';
+  for (const m of HISTORY_METRICS) html += chartCard(m, entries);
+  html += '</div>';
+  return html;
+}
+
+async function loadHistory() {
+  const content = document.getElementById('content');
+  if (!content) return;
+  let entries;
+  try {
+    const r = await fetch('/api/history');
+    const d = await r.json();
+    entries = d.entries || [];
+  } catch (e) {
+    content.innerHTML = '<div class="empty-note">Failed to load history: ' + esc(e.message) + '</div>';
+    return;
+  }
+  content.innerHTML = '<h2>History</h2>' + renderHistory(entries);
+}
+
+// Keyboard shortcuts: 1-9 then 0 switch tabs (maintabs button order, 0 = 10th
+// tab), r = analyze. Disabled while focus is in an input/select/textarea
+// (e.g. pet sim sliders).
+document.addEventListener('keydown', function (e) {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key >= '1' && e.key <= '9') {
+    const buttons = document.querySelectorAll('.maintabs button');
+    const btn = buttons[Number(e.key) - 1];
+    if (btn) btn.click();
+  } else if (e.key === '0') {
+    const buttons = document.querySelectorAll('.maintabs button');
+    const btn = buttons[9];
+    if (btn) btn.click();
+  } else if (e.key === 'r' || e.key === 'R') {
+    refresh();
+  }
+});
+
+loadLast();
