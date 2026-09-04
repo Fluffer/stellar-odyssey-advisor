@@ -45,6 +45,16 @@ describe("LabMath.normName / buildChain", () => {
       { name: "argon", kind: "currency" }, { name: "dark matter", kind: "currency" },
     ]);
   });
+
+  test("duplicate products: keeps the first building, ignores later ones", () => {
+    const buildings = [
+      { building: "Foundry A", level: 20, currency_use: ["gold"], material_use: [], produce: ["ingots"], input: 10000, output: 1, timer: 45 },
+      { building: "Foundry B", level: 20, currency_use: ["silver"], material_use: [], produce: ["ingots"], input: 5000, output: 1, timer: 30 },
+    ];
+    const chain = LabMath.buildChain(buildings);
+    assert.equal(chain.list.length, 2);
+    assert.equal(chain.byProduct["ingots"].name, "Foundry A");
+  });
 });
 
 describe("LabMath.expand", () => {

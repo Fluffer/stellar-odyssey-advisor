@@ -38,7 +38,8 @@ function buildChain(buildings) {
     ],
   })).filter(b => b.name && b.product);
   const byProduct = {};
-  for (const b of list) byProduct[b.product] = b;
+  // Keep the first building for each product; duplicates are ignored
+  for (const b of list) if (!byProduct[b.product]) byProduct[b.product] = b;
   return { list, byProduct };
 }
 
