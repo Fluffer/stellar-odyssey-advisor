@@ -945,6 +945,133 @@ function renderMaterials(m) {
   return html;
 }
 
+// ---- Lab bottleneck planner ----
+function labCapsuleTarget(fallback) {
+  try {
+    const v = parseInt(localStorage.getItem('advisor-lab-capsules') || '', 10);
+    if (v > 0) return v;
+  } catch (e) {}
+  return fallback || 10;
+}
+function setLabCapsules(v) {
+  const n = Math.max(1, Math.floor(Number(v) || 0));
+  try { localStorage.setItem('advisor-lab-capsules', String(n)); } catch (e) {}
+  if (window.lastData) render(window.lastData);
+}
+function fmtHours(h) {
+  if (h === null || h === undefined) return '?';
+  if (h < 1 / 60) return '< 1 min';
+  if (h < 1) return Math.round(h * 60) + ' min';
+  if (h < 48) return h.toFixed(1) + ' h';
+  return (h / 24).toFixed(1) + ' d';
+}
+function covBar(coverage) {
+  const tone = coverage >= 1 ? { color: 'var(--good)', width: 100 } : capTone(coverage * 100, 100);
+  if (coverage < 1) tone.color = coverage >= 0.8 ? 'var(--warn)' : 'var(--bad)';
+  return '<span class="covbar"><span class="covbar-fill" style="width:' + Math.min(100, coverage * 100).toFixed(0) + '%;background:' + tone.color + '"></span></span>';
+}
+function renderLab(lab) {
+  if (!lab || !lab.available) return '<div class="empty-note">No laboratory buildings found in the game state.</div>';
+  const LM = window.LabMath;
+  const capsules = labCapsuleTarget(lab.capsulesDefault);
+  const chain = LM.buildChain(lab.chain);
+  const opts = { freeSlots: lab.freeSlots };
+  const demand = [{ product: 'warp capsule', units: capsules }];
+  const plan = LM.planTarget(chain, demand, lab.stocks, opts);
+  const afterStocks = Object.assign({}, lab.stocks);
+  for (const b of lab.foundingBundle) afterStocks[b.product] = Math.max(0, (afterStocks[b.product] || 0) - b.units);
+  const after = LM.planCore(chain, demand, afterStocks, opts);
+  const founding = lab.targets.baseFounding;
+
+  let html = '<div class="sub">Chain from the live Laboratory: each unit consumes its building\'s input of EVERY listed resource; timer = base &minus; 0.1 s per level (floor 5 s); level k costs 1.15M &times; k credits. Queued units are not counted; stocks are treated as static. Both targets below share the same stock.</div>';
+
+  // --- cards ---
+  html += '<div class="cards">';
+  html += card('Warp capsule target', '<input class="pet-input lab-input" type="number" min="1" value="' + capsules + '" onchange="setLabCapsules(this.value)"> capsules');
+  html += card('Chain time (pipelined)', fmtHours(plan.hoursPipelined) +
+    '<span style="font-size:11px;color:var(--dim)"> claim &amp; re-queue every 10 min &middot; sequential ' + fmtHours(plan.hoursSequential) + '</span>');
+  if (plan.binding) {
+    html += card('Binding resource', '<span style="color:var(--bad)">' + esc(plan.binding.name) + '</span> ' + covBar(plan.binding.coverage) +
+      '<span style="font-size:11px;color:var(--dim)">' + (plan.binding.coverage * 100).toFixed(0) + '% covered</span>');
+  } else {
+    html += card('Resources', '<span style="color:var(--good)">all covered</span>');
+  }
+  html += card('Queue slots', lab.freeSlots + ' free / ' + lab.queueSlots);
+  html += card('Critical building' + (plan.criticalGroup.length > 1 ? 's (tied)' : ''), plan.criticalGroup.length ? '<span class="crit">' + plan.criticalGroup.map(esc).join(', ') + '</span>' : '-');
+  html += '</div>';
+
+  // --- per building ---
+  const rows = plan.buildings.filter(b => b.unitsToRun > 0);
+  html += '<h2>Per building</h2><div class="sub">buildings with nothing to run are hidden; a building runs one queue, so its time is serial</div>';
+  html += tableHtml('tbl-lab-buildings', rows, [
+    { label: 'Building', numeric: false, getValue: r => r.name, render: r => (plan.criticalGroup.includes(r.name) ? '<span class="crit">' : '<b>') + esc(r.name) + (plan.criticalGroup.includes(r.name) ? ' &#9650;</span>' : '</b>') },
+    { label: 'Stage', numeric: true, getValue: r => r.stage, render: r => String(r.stage) },
+    { label: 'Units', numeric: true, getValue: r => r.unitsToRun, render: r => String(r.unitsToRun) },
+    { label: 'Timer', numeric: true, getValue: r => r.timerNow, render: r => r.timerNow.toFixed(1) + ' s (lvl ' + r.level + ')' },
+    { label: 'Time', numeric: true, getValue: r => r.hours, render: r => fmtHours(r.hours) },
+    { label: 'Inputs needed / stock', numeric: false, getValue: r => r.inputs.length,
+      render: r => r.inputs.map(i => '<span style="white-space:nowrap;' + (i.coverage < 1 && i.kind === 'currency' ? 'color:var(--bad)' : '') + '">' +
+        esc(i.name) + ' ' + fmtC(i.needed) + '<span class="dimtext"> / ' + fmtC(i.stock) + '</span></span>').join(' &middot; ') },
+  ]);
+
+  // --- raw currencies ---
+  html += '<h2>Raw resources</h2>';
+  html += tableHtml('tbl-lab-raw', plan.raw, [
+    { label: 'Resource', numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' },
+    { label: 'Needed', numeric: true, getValue: r => r.needed, render: r => fmtC(r.needed) },
+    { label: 'Stock', numeric: true, getValue: r => r.stock, render: r => fmtC(r.stock) },
+    { label: 'Coverage', numeric: true, getValue: r => r.coverage, render: r => covBar(r.coverage) + (r.coverage * 100).toFixed(0) + '%' },
+    { label: 'Capsules supported', numeric: true, getValue: r => r.unitsSupported, render: r => String(r.unitsSupported) },
+  ]);
+
+  // --- upgrade ROI ---
+  html += '<h2>Upgrade ROI</h2><div class="sub">credits per hour saved on the pipelined chain time, +1 level each. Buildings tied at the top must be upgraded together: one alone saves nothing.</div><div class="list">';
+  let roiIndex = 0;
+  if (plan.groupRoi && plan.groupRoi.buildings.length > 1) {
+    roiIndex++;
+    html += '<div class="row"><span class="num">' + roiIndex + '</span><span><b>' + plan.groupRoi.buildings.map(esc).join(' + ') + '</b> (tied at the top) +1 level each: ' +
+      fmtC(plan.groupRoi.cost) + (plan.groupRoi.creditsPerHourSaved !== null
+        ? ' saves ' + fmtHours(plan.groupRoi.hoursSaved) + ' &mdash; <b>' + fmtC(plan.groupRoi.creditsPerHourSaved) + '</b> per hour saved'
+        : ' saves nothing (next stage bounds the chain)') + '</span></div>';
+  }
+  const roi = plan.upgradeRoi.filter(r => r.creditsPerHourSaved !== null).slice(0, 5);
+  if (!roi.length && !(plan.groupRoi && plan.groupRoi.creditsPerHourSaved !== null)) html += '<div class="row"><span>No level upgrade shortens the chain (nothing on the critical path to speed up).</span></div>';
+  roi.forEach((r) => {
+    roiIndex++;
+    html += '<div class="row"><span class="num">' + roiIndex + '</span><span><b>' + esc(r.name) + '</b> lvl ' + r.level + ' &rarr; ' + (r.level + 1) +
+      ': ' + fmtC(r.nextLevelCost) + ' saves ' + fmtHours(r.hoursSaved) + ' &mdash; <b>' + fmtC(r.creditsPerHourSaved) + '</b> per hour saved' +
+      (r.levelsToFloor ? '<span class="dimtext"> &middot; ' + r.levelsToFloor + ' levels to the 5 s floor (' + fmtC(r.costToFloor) + ')</span>' : '<span class="dimtext"> &middot; at the floor</span>') +
+      '</span></div>';
+  });
+  html += '</div>';
+
+  // --- speed multiplier ---
+  if (plan.speed) {
+    const best = plan.speed.options.filter(o => o.affordable && o.hoursSaved > 0).sort((a, b) => b.hoursSaved - a.hoursSaved)[0];
+    html += '<h2>Speed multiplier</h2><div class="list">';
+    if (best) {
+      html += '<div class="row"><span><b>' + plan.speed.buildings.map(esc).join(' + ') + '</b> at <b>x' + best.x + '</b>' + (plan.speed.buildings.length > 1 ? ' (all of them, they are tied)' : '') + ': chain ' + fmtHours(best.hours) + ' (saves ' + fmtHours(best.hoursSaved) + '), inputs &times;' + best.inputMult +
+        ' &mdash; extra ' + best.extraInputs.map(e => esc(e.name) + ' ' + fmtC(e.extra)).join(', ') + '. Costs resources, not credits; compare with the level upgrades above by hours saved.</span></div>';
+    } else {
+      html += '<div class="row"><span>No speed multiplier on <b>' + plan.speed.buildings.map(esc).join(' + ') + '</b> is affordable from stock.</span></div>';
+    }
+    html += '</div>';
+  }
+
+  // --- base founding ---
+  html += '<h2>Base founding</h2><div class="cards">';
+  const bundleRows = lab.foundingBundle.map(b => ({ name: b.product, need: b.units, have: lab.stocks[b.product] || 0 }));
+  const shortRows = bundleRows.filter(b => b.have < b.need);
+  html += card('Bundle', shortRows.length ? '<span style="color:var(--warn)">' + (bundleRows.length - shortRows.length) + ' / ' + bundleRows.length + ' ready</span>' : '<span style="color:var(--good)">5 / 5 ready</span>');
+  html += card('Chain time to complete', founding.ready ? '0' : fmtHours(founding.hoursPipelined));
+  html += card('Capsules after founding', fmtHours(after.hoursPipelined) + (after.binding ? '<span style="font-size:11px;color:var(--bad)"> binding ' + esc(after.binding.name) + '</span>' : ''));
+  html += '</div>';
+  if (shortRows.length) {
+    html += '<div class="list">' + shortRows.map(b => '<div class="row"><span><b>' + esc(b.name) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
+  }
+  return html;
+}
+
 function renderSummary(p, prevP) {
   const delta = key => {
     if (!prevP || prevP[key] === undefined || prevP[key] === null) return '';
@@ -975,6 +1102,7 @@ function render(d) {
     setTabCount('merges', (d.mergePlans || []).length, false);
     setTabCount('inventory', d.inventory ? d.inventory.counts.sellCandidates : 0, true);
     setTabCount('materials', d.materials ? d.materials.totals.deficitCount : 0, true);
+    setTabCount('lab', d.lab && d.lab.targets ? d.lab.targets.capsules.raw.filter(r => r.coverage < 1).length : 0, true);
   }
   let html = '';
   if (tab === 'history') {
@@ -1031,6 +1159,8 @@ function render(d) {
     html += '<h2>Catalyst inventory</h2>' + renderInventory(d.inventory);
   } else if (tab === 'materials') {
     html += '<h2>Materials</h2>' + renderMaterials(d.materials);
+  } else if (tab === 'lab') {
+    html += '<h2>Lab bottleneck planner</h2>' + renderLab(d.lab);
   }
   document.getElementById('content').innerHTML = html;
   document.querySelectorAll('.maintabs button').forEach(b => {
