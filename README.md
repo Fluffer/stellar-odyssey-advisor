@@ -62,6 +62,13 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   affordable speed multiplier, and base-founding readiness (5,000 each of the five
   intermediates) with the capsule chain time after founding; the target counts capsules
   on top of what you already hold
+- **Base** — base-building planner. Before founding: founding readiness, which star to
+  found under (stellarium rate per star type), the unlock order with stellarium cost per
+  module and an estimated timeline, per-module target levels with the exact material cost
+  (charged from each of the module's materials), the stockpile list with shortfalls and lab
+  chain times, which base-tier lab buildings to buy first, and the upkeep bill at the
+  targets as a share of your average daily income. After founding: the live module table
+  with boost, output, next level and tier cost, and the next unlock's ETA
 - **Item advisor** (Gear tab) — per-slot ship item analysis: how many levels behind the
   matching skill (battling/gathering/exploring) each item's craft-time level is and what
   recrafting now would cap its value at, weapon/shield NPC-weakness mod coverage, an engine
@@ -142,12 +149,14 @@ recent snapshot immediately (marked as stale) until you analyze fresh.
 | `advisor-core.js` | Analysis pipeline facade (see `lib/`) |
 | `lib/` | Engine modules (constants, value math, CDP reader, install/merge planners, battle rating, units/tech/pets/materials/ship-items advisors) |
 | `lib/lab.js` | Lab planner adapter (game state → shared chain math) |
+| `lib/base.js` | Base planner adapter |
 | `advisor-battle.js` | Battle simulator (ported from the game's battle code) |
 | `public/index.html` | GUI page skeleton |
 | `public/style.css` | GUI styles |
 | `public/app.js` | GUI client-side rendering and the pet simulator |
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
 | `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
+| `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
 | `check-page.js` | GUI file sanity checker |
 
 ## Tests

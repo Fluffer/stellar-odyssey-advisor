@@ -56,7 +56,8 @@
   - `state.account = { registered, lifetimeCredits }`
   - `state.currentSystem = { name, star, bodies: string[] } | null`
   - `state.bookmarks = [{ name, star, bodies: string[] }]`
-  - `state.gameVersion = string | null`
+  - `state.gameVersion = string | null` (server patch version, display only)
+  - `state.clientBundle = string | null` (basename of the main `index-*.js` script the page loaded; drives the formula-drift check)
 
 - [ ] **Step 1: Add store lookups and entries**
 
@@ -102,6 +103,15 @@ Inside the returned object add (after the `lab:` entry):
         return { name: b.system.name, star: b.system.star, bodies: (b.system.bodies || []).map(function (x) { return x.type; }) };
       }) : [],
     gameVersion: gameS ? (gameS.patchVersion || null) : null,
+    // Basename of the client bundle the page actually loaded: the formula
+    // provenance check compares it with the bundle the constants came from.
+    clientBundle: (function () {
+      try {
+        var srcs = Array.prototype.map.call(document.scripts, function (sc) { return sc.src || ""; });
+        var hit = srcs.filter(function (u) { return /index-[A-Za-z0-9_-]+.js/.test(u); })[0];
+        return hit ? hit.split("/").pop() : null;
+      } catch (e) { return null; }
+    })(),
 ```
 
 - [ ] **Step 2: Check and probe**
@@ -816,7 +826,7 @@ git commit -m "feat(base): normaliser, unlock plan, material totals and planBase
 
 **Interfaces:**
 - `buildBaseInput(state, opts) → input` (shape from Task 3) using `stocksFromState` from `lib/lab.js`, `statTotalsByContext` from `lib/installs.js` for `base_upkeep_reduction`, `state.dailyQuests` absent → `questsClaimed: 0`.
-- `planBaseFromState(state, opts) → { phase: 'pre'|'live', provenance: { client, bundle, live, drift }, founding: { bundle: [{ product, units, have }], ready }, location: { current: { name, star, rate, rare }, bookmarks: [{ name, star, rate }], best: { name, star, rate } | null, chosen: { name, star, rate }, bodies: [{ type, activity }] }, input, plan, live: { name, stellarium, nextStellariumTick, modules: [{ name, unlocked, level, tier, active, boost, output, nextLevelCost, nextTierCost }] , nextUnlock: { name, cost, etaDays } | null } | null, labPanelHint: boolean }`
+- `planBaseFromState(state, opts) → { phase: 'pre'|'live', provenance: { client, bundle, live, liveBundle, drift }, founding: { bundle: [{ product, units, have }], ready }, location: { current: { name, star, rate, rare }, bookmarks: [{ name, star, rate }], best: { name, star, rate } | null, chosen: { name, star, rate }, bodies: [{ type, activity }] }, input, plan, live: { name, stellarium, nextStellariumTick, modules: [{ name, unlocked, level, tier, active, boost, output, nextLevelCost, nextTierCost }] , nextUnlock: { name, cost, etaDays } | null } | null, labPanelHint: boolean }`
 - `advisor-core.js`: `base` in the analyze output; `planBaseFromState` exported as `planBase`.
 
 - [ ] **Step 1: Write the failing tests** (append to `test/base.test.js`)
@@ -834,7 +844,7 @@ describe("lib/base.js planBaseFromState", () => {
     account: { registered: 1786174949, lifetimeCredits: 5.4e9 },
     currentSystem: { name: "Torvornir", star: "A type", bodies: ["Comet", "Gas Planet"] },
     bookmarks: [{ name: "Loxgyn", star: "M type", bodies: ["Comet"] }, { name: "Vak", star: "Black Hole", bodies: ["Belt"] }],
-    gameVersion: "1.1.1",
+    gameVersion: "1.1.2", clientBundle: "index-BiPcVSdi.js",
     commonResources: { gold: 1e6 }, rareCurrencies: { silicon: 1e6, cobalt: 1e6, argon: 1e5, dark_matter: 1e5 },
     materials: [{ name: "ingots", quantity: 5000 }, { name: "refined crystals", quantity: 5000 }, { name: "high end crystals", quantity: 5000 },
       { name: "propulsors", quantity: 5000 }, { name: "nanoconductors", quantity: 5000 }, { name: "microcircuits", quantity: 1600 }, { name: "fusion cells", quantity: 1600 }],
@@ -856,7 +866,9 @@ describe("lib/base.js planBaseFromState", () => {
     assert.deepEqual(b.plan.buyFirst, ["Aeroforge", "Cryovault", "Ferric Mill", "Prism Nexus"]);
     assert.equal(b.live, null);
     assert.equal(b.labPanelHint, true, "base-tier list empty and nextBaseCost 0 -> panel never opened");
-    assert.equal(b.provenance.live, "1.1.1"); assert.equal(b.provenance.drift, false);
+    assert.equal(b.provenance.live, "1.1.2"); assert.equal(b.provenance.liveBundle, "index-BiPcVSdi.js"); assert.equal(b.provenance.drift, false);
+    const drifted = planBaseFromState(Object.assign(liveState(), { clientBundle: "index-ZZZZ.js" }), { now: 1786174949 + 27 * 86400 });
+    assert.equal(drifted.provenance.drift, true);
   });
 
   test("opts.star chooses the ETA star; opts.levels override targets", () => {
@@ -982,9 +994,13 @@ function planBaseFromState(state, opts) {
   const baseLab = state.baseLab || {};
   const labPanelHint = !(Array.isArray(baseLab.buildings) && baseLab.buildings.length) && !(baseLab.nextBaseCost > 0);
   const liveVersion = state.gameVersion || null;
+  const liveBundle = state.clientBundle || null;
   return {
     phase: live ? "live" : "pre",
-    provenance: { client: BaseMath.PROVENANCE.client, bundle: BaseMath.PROVENANCE.bundle, live: liveVersion, drift: !!(liveVersion && liveVersion !== BaseMath.PROVENANCE.client) },
+    // Drift = the page loaded a different client bundle than the one the
+    // formulas were extracted from. patchVersion is server-side and changes
+    // without a client update, so it is shown but never used for drift.
+    provenance: { client: BaseMath.PROVENANCE.client, bundle: BaseMath.PROVENANCE.bundle, live: liveVersion, liveBundle, drift: !!(liveBundle && liveBundle !== BaseMath.PROVENANCE.bundle) },
     founding, location, input, plan, live: liveBlock, labPanelHint,
   };
 }
@@ -1089,8 +1105,8 @@ function renderBase(b) {
   const { plan, starName, rate } = basePlanFor(b);
   setTabCount('base', plan.stockpile.filter(s => s.short > 0).length, true);
   let html = '';
-  html += '<div class="sub">Formulas from the game client ' + esc(b.provenance.client) +
-    (b.provenance.drift ? ' <span class="drift">(game now reports ' + esc(String(b.provenance.live)) + ' &mdash; re-check formulas)</span>' : '') +
+  html += '<div class="sub">Formulas from the game client bundle ' + esc(b.provenance.bundle) + ' (patch ' + esc(String(b.provenance.live || b.provenance.client)) + ')' +
+    (b.provenance.drift ? ' <span class="drift">(the game now runs ' + esc(String(b.provenance.liveBundle)) + ' &mdash; re-check formulas)</span>' : '') +
     '. Stellarium income is an estimate (star rate &times; miner boost every 5 h); everything else is exact. Level cost is charged from EACH of a module\'s materials.</div>';
 
   // --- cards ---
