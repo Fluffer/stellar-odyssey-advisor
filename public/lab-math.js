@@ -53,12 +53,14 @@ function buildChain(buildings) {
 function expand(chain, demands, stocks, opts) {
   const netTopLevel = !(opts && opts.netTopLevel === false);
   const remaining = {};
-  for (const [k, v] of Object.entries(stocks || {})) remaining[normName(k)] = Number(v) || 0;
+  for (const [k, v] of Object.entries(stocks || {})) remaining[normName(k)] = Math.max(0, Number(v) || 0);
   const runs = {}, gross = {}, raw = {};
+  const inProgress = new Set();
   const need = (product, units, depth) => {
     if (units <= 0 || depth > 32) return;
     const b = chain.byProduct[product];
     if (!b) { raw[product] = (raw[product] || 0) + units; return; }
+    if (inProgress.has(product)) { raw[product] = (raw[product] || 0) + units; return; } // cycle: treat as raw
     gross[product] = (gross[product] || 0) + units;
     const have = (netTopLevel || depth > 0) ? (remaining[product] || 0) : 0;
     const use = Math.min(have, units);
@@ -67,20 +69,45 @@ function expand(chain, demands, stocks, opts) {
     const batches = Math.ceil(Math.max(0, toProduce) / b.output);
     runs[b.name] = (runs[b.name] || 0) + batches;
     if (batches > 0) {
+      inProgress.add(product);
       for (const inp of b.inputs) need(inp.name, batches * b.input, depth + 1);
+      inProgress.delete(product);
     }
   };
   for (const d of demands || []) need(normName(d.product), Number(d.units) || 0, 0);
   return { runs, gross, raw };
 }
 
-// Longest path from a product down to raw inputs.
-function stageOf(chain, product, depth) {
-  const b = chain.byProduct[normName(product)];
-  if (!b || (depth || 0) > 32) return 0;
-  let deepest = 0;
-  for (const inp of b.inputs) deepest = Math.max(deepest, stageOf(chain, inp.name, (depth || 0) + 1));
-  return deepest + 1;
+// Longest path from a product down to raw inputs. Memoised with an
+// in-progress set so a cycle among buildings is treated as raw (depth 0)
+// at the point of recursion, rather than recursing forever.
+function stageOf(chain, product) {
+  const memo = {};
+  const visiting = new Set();
+  const walk = (p) => {
+    const b = chain.byProduct[p];
+    if (!b) return 0;
+    if (memo[p] !== undefined) return memo[p];
+    if (visiting.has(p)) return 0; // cycle: treat as raw, do not recurse
+    visiting.add(p);
+    let deepest = 0;
+    for (const inp of b.inputs) deepest = Math.max(deepest, walk(inp.name));
+    visiting.delete(p);
+    memo[p] = deepest + 1;
+    return memo[p];
+  };
+  return walk(normName(product));
+}
+
+// Stock left after paying a bundle of products (e.g. the base-founding
+// cost). Returns a NEW object; the input `stocks` is not mutated.
+function stocksAfterBundle(stocks, bundle) {
+  const after = { ...(stocks || {}) };
+  for (const b of bundle || []) {
+    const name = normName(b.product);
+    after[name] = Math.max(0, (after[name] || 0) - (Number(b.units) || 0));
+  }
+  return after;
 }
 
 function timerAt(baseTimer, level) {
@@ -110,7 +137,7 @@ function planCore(chain, demands, stocks, opts) {
   const overrides = opts.levelOverrides || {};
   const speed = opts.speed || null;
   const stockOf = {};
-  for (const [k, v] of Object.entries(stocks || {})) stockOf[normName(k)] = Number(v) || 0;
+  for (const [k, v] of Object.entries(stocks || {})) stockOf[normName(k)] = Math.max(0, Number(v) || 0);
 
   // Speed multiplies the inputs of specified buildings: fold it into the expansion
   // by scaling those buildings' `input` before expanding.
@@ -270,7 +297,7 @@ function planTarget(chain, demands, stocks, opts) {
 
 const LabMath = {
   SPEED_INPUT_MULT, LEVEL_COST_BASE, TIMER_FLOOR, TIMER_STEP, CLAIM_COOLDOWN_MIN,
-  normName, buildChain, expand, stageOf,
+  normName, buildChain, expand, stageOf, stocksAfterBundle,
   timerAt, levelCost, levelsToFloor, costToFloor, planCore, planTarget,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = LabMath;

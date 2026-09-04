@@ -405,3 +405,76 @@ describe("target product is not netted against its own stock (additional capsule
     assert.equal(lab.targets.capsules.afterFounding.hoursPipelined > 0, true);
   });
 });
+
+describe("cyclic or malformed chains", () => {
+  const cycleBuilding = (name, produces, needs) =>
+    ({ building: name, level: 0, currency_use: [], material_use: needs, produce: [produces], input: 1, output: 1, timer: 10 });
+
+  test("two-building cycle (A: x<-y, B: y<-x) does not hang stageOf or expand", { timeout: 5000 }, () => {
+    const buildings = [cycleBuilding("A", "x", ["y"]), cycleBuilding("B", "y", ["x"])];
+    const chain = LabMath.buildChain(buildings);
+    const stage = LabMath.stageOf(chain, "x");
+    assert.ok(stage <= 2, `stageOf(x) should be small, got ${stage}`);
+    const r = LabMath.expand(chain, [{ product: "x", units: 3 }], {});
+    assert.equal(r.runs.A, 3);
+    for (const v of Object.values(r.raw)) assert.ok(Number.isFinite(v), `raw value not finite: ${v}`);
+    const core = LabMath.planCore(chain, [{ product: "x", units: 3 }], {}, { freeSlots: 1 });
+    assert.ok(Number.isFinite(core.hoursPipelined));
+  });
+
+  test("three-building cycle, each with TWO producible inputs, does not explode planCore", { timeout: 5000 }, () => {
+    const buildings = [
+      cycleBuilding("A", "x", ["y", "z"]),
+      cycleBuilding("B", "y", ["x", "z"]),
+      cycleBuilding("C", "z", ["x", "y"]),
+    ];
+    const chain = LabMath.buildChain(buildings);
+    const core = LabMath.planCore(chain, [{ product: "x", units: 3 }], {}, { freeSlots: 1 });
+    assert.ok(Number.isFinite(core.hoursPipelined));
+  });
+});
+
+describe("F2: freeSlots reported honestly when the queue is full", () => {
+  test("planLab: queueSlots 4, 4 queued -> freeSlots 0 (not clamped to 1)", () => {
+    const { planLab } = require("../lib/lab.js");
+    const state = {
+      lab: { buildings: liveBuildings(), queue: [{}, {}, {}, {}], queueSlots: 4 },
+      commonResources: {}, rareCurrencies: {}, materials: [],
+    };
+    const lab = planLab(state, { capsules: 10 });
+    assert.equal(lab.freeSlots, 0);
+    assert.ok(Number.isFinite(lab.targets.capsules.hoursPipelined));
+  });
+});
+
+describe("F3: negative stock is clamped to 0", () => {
+  test("expand: -100 ingots in stock does not add to what's needed", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const r = LabMath.expand(chain, [{ product: "warp capsule", units: 10 }], { ingots: -100 });
+    assert.equal(r.runs["Foundry"], 2000);
+  });
+});
+
+describe("F6: LabMath.stocksAfterBundle", () => {
+  test("subtracts bundle units from stock, clamped at 0, without mutating the input", () => {
+    const stocks = { ingots: 6000, propulsors: 100 };
+    const result = LabMath.stocksAfterBundle(stocks, [
+      { product: "ingots", units: 5000 },
+      { product: "propulsors", units: 5000 },
+    ]);
+    assert.deepEqual(result, { ingots: 1000, propulsors: 0 });
+    assert.deepEqual(stocks, { ingots: 6000, propulsors: 100 });
+  });
+});
+
+describe("F8: output > 1 per batch", () => {
+  test("Mint: input 3, output 5, 12 coins needed -> 3 runs (ceil(12/5)), 9 gold", () => {
+    const buildings = [
+      { building: "Mint", level: 0, currency_use: ["gold"], material_use: [], produce: ["coins"], input: 3, output: 5, timer: 10 },
+    ];
+    const chain = LabMath.buildChain(buildings);
+    const r = LabMath.expand(chain, [{ product: "coins", units: 12 }], {});
+    assert.equal(r.runs["Mint"], 3);
+    assert.equal(r.raw["gold"], 9);
+  });
+});

@@ -970,17 +970,32 @@ function covBar(coverage) {
   if (coverage < 1) tone.color = coverage >= 0.8 ? 'var(--warn)' : 'var(--bad)';
   return '<span class="covbar"><span class="covbar-fill" style="width:' + Math.min(100, coverage * 100).toFixed(0) + '%;background:' + tone.color + '"></span></span>';
 }
+// Builds the client-side capsule-target plan and counts short raw inputs,
+// shared by the tab badge (render()) and renderLab() so the plan is
+// computed once per render, not three times.
+function labShortfallCount(lab) {
+  const LM = window.LabMath;
+  const capsules = labCapsuleTarget(lab.capsulesDefault);
+  const chain = LM.buildChain(lab.chain);
+  const capsuleOpts = { freeSlots: lab.freeSlots, netTopLevel: false };
+  const demand = [{ product: 'warp capsule', units: capsules }];
+  const plan = LM.planTarget(chain, demand, lab.stocks, capsuleOpts);
+  return { plan, count: plan.raw.filter(r => r.coverage < 1).length };
+}
 function renderLab(lab) {
-  if (!lab || !lab.available) return '<div class="empty-note">No laboratory buildings found in the game state.</div>';
+  if (!lab || !lab.available) {
+    setTabCount('lab', 0, true);
+    return '<div class="empty-note">No laboratory buildings found in the game state.</div>';
+  }
   const LM = window.LabMath;
   const capsules = labCapsuleTarget(lab.capsulesDefault);
   const chain = LM.buildChain(lab.chain);
   const opts = { freeSlots: lab.freeSlots };
   const capsuleOpts = Object.assign({ netTopLevel: false }, opts);
   const demand = [{ product: 'warp capsule', units: capsules }];
-  const plan = LM.planTarget(chain, demand, lab.stocks, capsuleOpts);
-  const afterStocks = Object.assign({}, lab.stocks);
-  for (const b of lab.foundingBundle) afterStocks[b.product] = Math.max(0, (afterStocks[b.product] || 0) - b.units);
+  const { plan, count: shortfallCount } = labShortfallCount(lab);
+  setTabCount('lab', shortfallCount, true);
+  const afterStocks = LM.stocksAfterBundle(lab.stocks, lab.foundingBundle);
   const after = LM.planCore(chain, demand, afterStocks, capsuleOpts);
   const founding = lab.targets.baseFounding;
 
@@ -1064,7 +1079,7 @@ function renderLab(lab) {
   const bundleRows = lab.foundingBundle.map(b => ({ name: b.product, need: b.units, have: lab.stocks[b.product] || 0 }));
   const shortRows = bundleRows.filter(b => b.have < b.need);
   html += card('Bundle', shortRows.length ? '<span style="color:var(--warn)">' + (bundleRows.length - shortRows.length) + ' / ' + bundleRows.length + ' ready</span>' : '<span style="color:var(--good)">5 / 5 ready</span>');
-  html += card('Chain time to complete', founding.ready ? '0' : fmtHours(founding.hoursPipelined));
+  html += card('Chain time to complete', founding.ready ? 'ready' : fmtHours(founding.hoursPipelined));
   html += card('Capsules after founding', fmtHours(after.hoursPipelined) + (after.binding ? '<span style="font-size:11px;color:var(--bad)"> binding ' + esc(after.binding.name) + '</span>' : ''));
   html += '</div>';
   if (shortRows.length) {
@@ -1103,7 +1118,9 @@ function render(d) {
     setTabCount('merges', (d.mergePlans || []).length, false);
     setTabCount('inventory', d.inventory ? d.inventory.counts.sellCandidates : 0, true);
     setTabCount('materials', d.materials ? d.materials.totals.deficitCount : 0, true);
-    setTabCount('lab', d.lab && d.lab.targets ? d.lab.targets.capsules.raw.filter(r => r.coverage < 1).length : 0, true);
+    // When the lab tab is active, renderLab() computes the plan itself and
+    // sets this badge from it (avoids computing the plan twice per render).
+    if (tab !== 'lab') setTabCount('lab', d.lab && d.lab.available ? labShortfallCount(d.lab).count : 0, true);
   }
   let html = '';
   if (tab === 'history') {
@@ -1319,8 +1336,8 @@ async function loadHistory() {
 }
 
 // Keyboard shortcuts: 1-9 then 0 switch tabs (maintabs button order, 0 = 10th
-// tab), r = analyze. Disabled while focus is in an input/select/textarea
-// (e.g. pet sim sliders).
+// tab), - selects the 11th tab, r = analyze. Disabled while focus is in an
+// input/select/textarea (e.g. pet sim sliders).
 document.addEventListener('keydown', function (e) {
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
@@ -1331,6 +1348,10 @@ document.addEventListener('keydown', function (e) {
   } else if (e.key === '0') {
     const buttons = document.querySelectorAll('.maintabs button');
     const btn = buttons[9];
+    if (btn) btn.click();
+  } else if (e.key === '-') {
+    const buttons = document.querySelectorAll('.maintabs button');
+    const btn = buttons[10];
     if (btn) btn.click();
   } else if (e.key === 'r' || e.key === 'R') {
     refresh();
