@@ -1088,6 +1088,121 @@ function renderLab(lab) {
   return html;
 }
 
+// ---- Base planner ----
+function baseLevels() {
+  try { const v = JSON.parse(localStorage.getItem('advisor-base-levels') || 'null'); if (v && typeof v === 'object') return v; } catch (e) {}
+  return {};
+}
+function setBaseLevel(name, v) {
+  const levels = baseLevels();
+  const n = Math.max(0, Math.floor(Number(v) || 0));
+  levels[name] = n;
+  try { localStorage.setItem('advisor-base-levels', JSON.stringify(levels)); } catch (e) {}
+  if (window.lastData) render(window.lastData);
+}
+function baseStar(fallback) {
+  try { const v = localStorage.getItem('advisor-base-star'); if (v) return v; } catch (e) {}
+  return fallback;
+}
+function setBaseStar(v) {
+  try { localStorage.setItem('advisor-base-star', v); } catch (e) {}
+  if (window.lastData) render(window.lastData);
+}
+function fmtDays(d) {
+  if (d === null || d === undefined || !isFinite(d)) return '?';
+  if (d < 1) return Math.round(d * 24) + ' h';
+  return d.toFixed(1) + ' d';
+}
+// Recompute the plan client-side from the payload input with the stored
+// level boxes and star selector applied.
+function basePlanFor(b) {
+  const BM = window.BaseMath;
+  const levels = Object.assign({}, b.input.levels || {}, baseLevels());
+  const starName = baseStar(b.input.starName);
+  const rate = (BM.STAR_BONUSES[starName] || { rate: b.input.starRate || 0 }).rate;
+  const input = Object.assign({}, b.input, { levels, starName, starRate: rate });
+  return { plan: BM.planBase(input), starName, rate, levels };
+}
+function baseShortfallCount(b) {
+  if (!b || !b.plan) return 0;
+  return basePlanFor(b).plan.stockpile.filter(s => s.short > 0).length;
+}
+function renderBase(b) {
+  if (!b) return '<div class="empty-note">No base data in the game state.</div>';
+  const BM = window.BaseMath;
+  const { plan, starName, rate } = basePlanFor(b);
+  setTabCount('base', plan.stockpile.filter(s => s.short > 0).length, true);
+  let html = '';
+  html += '<div class="sub">Formulas from the game client bundle ' + esc(b.provenance.bundle) + ' (patch ' + esc(String(b.provenance.live || b.provenance.client)) + ')' +
+    (b.provenance.drift ? ' <span class="drift">(the game now runs ' + esc(String(b.provenance.liveBundle)) + ' &mdash; re-check formulas)</span>' : '') +
+    '. Stellarium income is an estimate (star rate &times; miner boost every 5 h); everything else is exact. Level cost is charged from EACH of a module\'s materials.</div>';
+
+  // --- cards ---
+  html += '<div class="cards">';
+  html += card('Phase', b.phase === 'live' ? '<span style="color:var(--good)">base founded</span>' : 'pre-founding');
+  const readyCount = b.founding.bundle.filter(x => x.have >= x.units).length;
+  html += card('Founding materials', (readyCount === b.founding.bundle.length ? '<span style="color:var(--good)">' : '<span style="color:var(--warn)">') + readyCount + ' / ' + b.founding.bundle.length + '</span>');
+  const stars = [b.location.current].concat(b.location.bookmarks).filter(s => s.star);
+  const seen = {}; const options = [];
+  for (const s of stars) { if (seen[s.star]) continue; seen[s.star] = true; options.push(s); }
+  html += card('Stellarium star', '<select class="pet-input" onchange="setBaseStar(this.value)">' +
+    options.map(s => '<option value="' + esc(s.star) + '"' + (s.star === starName ? ' selected' : '') + '>' + esc(s.star) + ' (rate ' + s.rate + ')' + (s.name ? ' &middot; ' + esc(s.name) : '') + '</option>').join('') +
+    '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est"> best known: ' + esc(b.location.best.star) + ' rate ' + b.location.best.rate + (b.location.best.name ? ' at ' + esc(b.location.best.name) : '') + '</span>' : ''));
+  html += card('Stellarium / day', plan.stellariumPerDay.toFixed(1) + '<span class="est"> estimate &middot; all unlocks in ' + fmtDays(plan.daysToAllUnlocks) + ' (' + plan.totalStellariumLeft + ' left)</span>');
+  const up = plan.upkeep;
+  html += card('Upkeep / day at targets', fmtC(up.perDay) + '<span class="est"> ' + (up.shareOfIncome !== null ? (up.shareOfIncome * 100).toFixed(0) + '% of avg daily income (' + fmtC(b.input.avgDaily) + ')' : 'income unknown') +
+    ' &middot; ' + up.passiveCount + ' passive modules &middot; 5 dailies cover 75% &rarr; net ' + fmtC(up.perDay * 0.25) + '</span>');
+  html += '</div>';
+  if (b.labPanelHint) html += '<div class="sub">Base-tier lab buildings (Aeroforge, Cryovault, Ferric Mill, Prism Nexus, Rare Material Facility) and their price only show up after you open the Laboratory panel in-game once.</div>';
+  if (b.location.bodies.length) html += '<div class="sub">Body XP bonus (+10%, permanent) in the current system: ' + b.location.bodies.map(x => esc(x.type) + (x.activity ? ' &rarr; ' + esc(x.activity) : '')).join(', ') + '.</div>';
+
+  // --- live block ---
+  if (b.live) {
+    html += '<h2>Base: ' + esc(b.live.name) + '</h2><div class="cards">';
+    html += card('Stellarium held', String(b.live.stellarium));
+    if (b.live.nextUnlock) html += card('Next unlock', esc(b.live.nextUnlock.name) + '<span class="est"> ' + b.live.nextUnlock.cost + ' stellarium &middot; ' + (b.live.nextUnlock.etaDays === 0 ? 'affordable now' : 'in ' + fmtDays(b.live.nextUnlock.etaDays) + ' (estimate)') + '</span>');
+    html += '</div>';
+    html += tableHtml('tbl-base-live', b.live.modules.filter(m => m.unlocked), [
+      { label: 'Module', numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' + (r.active ? '' : ' <span style="color:var(--bad)">(off)</span>') },
+      { label: 'Level', numeric: true, getValue: r => r.level, render: r => String(r.level) },
+      { label: 'Tier', numeric: true, getValue: r => r.tier, render: r => String(r.tier) },
+      { label: 'Boost', numeric: true, getValue: r => r.boost, render: r => r.boost.toFixed(1) + '%' },
+      { label: 'Output / tick', numeric: true, getValue: r => r.output, render: r => r.output.toFixed(2) },
+      { label: 'Next level', numeric: true, getValue: r => r.nextLevelCost, render: r => fmtC(r.nextLevelCost) + ' of each: ' + r.materials.map(esc).join(', ') },
+      { label: 'Next tier', numeric: true, getValue: r => r.nextTierCost, render: r => r.nextTierCost + ' stellarium' },
+    ]);
+  }
+
+  // --- modules / targets ---
+  html += '<h2>Modules and targets</h2><div class="sub">unlock order follows the needs tree; set the level you want to reach in each box (saved in this browser)</div>';
+  const unlockByName = {}; for (const u of plan.unlocks) unlockByName[u.name] = u;
+  const rows = plan.unlocks.map(u => Object.assign({}, u, plan.targets.find(t => t.name === u.name) || {}));
+  html += tableHtml('tbl-base-modules', rows, [
+    { label: 'Module', numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' + (r.unlocked ? ' <span style="color:var(--good)">unlocked</span>' : '') },
+    { label: 'Type', numeric: false, getValue: r => r.type || '', render: r => esc(r.type || '') },
+    { label: 'Unlock', numeric: true, getValue: r => r.cost, render: r => r.unlocked ? '-' : r.cost + '<span class="est"> (' + r.cumulative + ' cum. &middot; ' + fmtDays(r.daysToUnlock) + ')</span>' },
+    { label: 'Materials', numeric: false, getValue: r => (r.materials || []).join(','), render: r => (r.materials || []).map(esc).join(', ') },
+    { label: 'Target level', numeric: true, getValue: r => r.to || 0, render: r => '<input class="pet-input base-input" type="number" min="0" value="' + (r.to || 0) + '" onchange="setBaseLevel(' + jsStr(r.name) + ', this.value)">' + (r.from ? '<span class="est"> from ' + r.from + '</span>' : '') },
+    { label: 'Cost to target', numeric: true, getValue: r => r.perMaterial || 0, render: r => fmtC(r.perMaterial || 0) + ' of each' },
+    { label: 'Boost at target', numeric: true, getValue: r => r.boostAtTarget || 0, render: r => (r.boostAtTarget || 0).toFixed(0) + '%' },
+    { label: 'Upkeep / h at target', numeric: true, getValue: r => r.upkeepPerHourAtTarget || 0, render: r => r.type === 'active' ? '-' : fmtC(r.upkeepPerHourAtTarget || 0) },
+  ]);
+
+  // --- stockpile ---
+  html += '<h2>Stockpile for the targets</h2>';
+  if (plan.buyFirst.length) html += '<div class="sub" style="color:var(--warn)">Buy these base-tier lab buildings first: ' + plan.buyFirst.map(esc).join(', ') + '.</div>';
+  html += tableHtml('tbl-base-stock', plan.stockpile, [
+    { label: 'Material', numeric: false, getValue: r => r.material, render: r => '<b>' + esc(r.material) + '</b>' },
+    { label: 'Needed', numeric: true, getValue: r => r.needed, render: r => fmtC(r.needed) },
+    { label: 'Stock', numeric: true, getValue: r => r.stock, render: r => fmtC(r.stock) },
+    { label: 'Short', numeric: true, getValue: r => r.short, render: r => r.short > 0 ? '<span style="color:var(--bad)">' + fmtC(r.short) + '</span>' : '<span style="color:var(--good)">0</span>' },
+    { label: 'For', numeric: false, getValue: r => r.modules.length, render: r => r.modules.map(esc).join(', ') },
+    { label: 'Produced by', numeric: false, getValue: r => r.building || '', render: r => r.bought ? esc(r.building || '') : '<span style="color:var(--warn)">buy ' + esc(r.building || '?') + ' first</span><span class="est"> &middot; consumes ' + r.inputs.map(esc).join(', ') + '</span>' },
+    { label: 'Chain time', numeric: true, getValue: r => r.hoursPipelined === null ? -1 : r.hoursPipelined, render: r => r.hoursPipelined === null ? '-' : fmtHours(r.hoursPipelined) + (r.binding ? '<span style="color:var(--bad)"> binding ' + esc(r.binding.name) + ' ' + (r.binding.coverage * 100).toFixed(0) + '%</span>' : '') },
+  ]);
+  return html;
+}
+
 function renderSummary(p, prevP) {
   const delta = key => {
     if (!prevP || prevP[key] === undefined || prevP[key] === null) return '';
@@ -1121,6 +1236,9 @@ function render(d) {
     // When the lab tab is active, renderLab() computes the plan itself and
     // sets this badge from it (avoids computing the plan twice per render).
     if (tab !== 'lab') setTabCount('lab', d.lab && d.lab.available ? labShortfallCount(d.lab).count : 0, true);
+    // Same story for base: renderBase() computes the plan itself and sets
+    // this badge from it when the tab is active.
+    if (tab !== 'base') setTabCount('base', baseShortfallCount(d.base), true);
   }
   let html = '';
   if (tab === 'history') {
@@ -1179,6 +1297,8 @@ function render(d) {
     html += '<h2>Materials</h2>' + renderMaterials(d.materials);
   } else if (tab === 'lab') {
     html += '<h2>Lab bottleneck planner</h2>' + renderLab(d.lab);
+  } else if (tab === 'base') {
+    html += '<h2>Base planner</h2>' + renderBase(d.base);
   }
   document.getElementById('content').innerHTML = html;
   document.querySelectorAll('.maintabs button').forEach(b => {

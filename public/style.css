@@ -131,6 +131,10 @@
 .covbar-fill { display: block; height: 100%; border-radius: 3px; }
 .crit { color: var(--warn); font-weight: 700; }
 .lab-input { width: 90px; }
+/* base planner */
+.base-input { width: 70px; }
+.est { color: var(--dim); font-size: 11px; }
+.drift { color: var(--warn); }
 
 /* per-activity stat panel (Stats tab) */
 .ctxgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
