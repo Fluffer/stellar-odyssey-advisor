@@ -86,7 +86,9 @@ TargetPlan = {
   binding: { name, coverage } | null,
   hoursSequential, hoursPipelined, freeSlots,
   upgradeRoi: [{ name, level, nextLevelCost, hoursSaved, creditsPerHourSaved, levelsToFloor, costToFloor }],
-  speed: { building, options: [{ x, inputMult, hours, affordable, extraInputs }] } | null,
+  criticalGroup: string[],
+  groupRoi: { buildings, cost, hoursSaved, creditsPerHourSaved } | null,
+  speed: { buildings, options: [{ x, inputMult, hours, hoursSaved, affordable, extraInputs }] } | null,
   afterFounding: { hoursPipelined, binding } | null,   // capsule target only
   ready: boolean,
 }
@@ -120,11 +122,20 @@ Algorithm:
    `creditsPerHourSaved = nextLevelCost / hoursSaved` (null if 0).
    `levelsToFloor` and `costToFloor` from the 0.1 s/level rule
    (`Σ 1.15M × k`). Buildings not on the critical path show hoursSaved 0.
-5. `speed` for the critical building: for x in 2..10, recompute
-   `hoursPipelined` with that building's time / x and its inputs × mult
+   Ties: several buildings often share the maximum hours (all stage-1
+   buildings at the same level and unit count). Upgrading one of them alone
+   saves nothing, which the full recompute reports honestly. So the plan also
+   carries `criticalGroup` = every building whose hours are within 1e-9 of
+   the maximum, and `groupRoi` = { buildings, cost = Σ nextLevelCost over
+   the group, hoursSaved = recompute with EVERY group member at level + 1,
+   creditsPerHourSaved }. The GUI shows the group row first whenever the
+   group has more than one member.
+5. `speed` for the critical group: for x in 2..10, recompute
+   `hoursPipelined` with every group member's time / x and inputs × mult
    (recompute, so a shifted bottleneck is reflected); `affordable` = every
-   input of that building still covered by stock at that multiplier;
-   `extraInputs` lists the additional units of each input. The GUI shows the
+   input of every group member still covered by stock at that multiplier;
+   `extraInputs` lists the additional units of each input, summed across
+   the group. `planCore` accepts `speed: { buildings: string[], x }`. The GUI shows the
    best affordable x only. The multiplier costs resources, not credits, so it
    is presented next to level upgrades in hours-saved terms, never merged into
    one credits-per-hour ranking.
