@@ -177,10 +177,68 @@ function planCore(chain, demands, stocks, opts) {
   };
 }
 
+// Full target plan: core + upgrade ROI (per building, +1 level, full
+// recompute) + speed options for the critical building (full recompute so a
+// shifted bottleneck is reflected).
+function planTarget(chain, demands, stocks, opts) {
+  opts = opts || {};
+  const base = planCore(chain, demands, stocks, opts);
+
+  const upgradeRoi = base.buildings
+    .filter(b => b.unitsToRun > 0)
+    .map(b => {
+      const src = chain.list.find(x => x.name === b.name);
+      const up = planCore(chain, demands, stocks, {
+        ...opts, levelOverrides: { ...(opts.levelOverrides || {}), [b.name]: b.level + 1 },
+      });
+      const upBuilding = up.buildings.find(x => x.name === b.name);
+      const secondsSaved = b.name === base.critical ? Math.max(0, b.seconds - upBuilding.seconds) : 0;
+      const hoursSaved = secondsSaved / 3600;
+      const nextLevelCost = levelCost(b.level + 1);
+      const ltf = levelsToFloor(src ? src.timer : 0, b.level);
+      return {
+        name: b.name, level: b.level, nextLevelCost, hoursSaved,
+        creditsPerHourSaved: hoursSaved > 1e-9 ? nextLevelCost / hoursSaved : null,
+        levelsToFloor: ltf, costToFloor: costToFloor(b.level, ltf),
+      };
+    })
+    .sort((a, b) => {
+      if (a.creditsPerHourSaved === null && b.creditsPerHourSaved === null) return 0;
+      if (a.creditsPerHourSaved === null) return 1;
+      if (b.creditsPerHourSaved === null) return -1;
+      return a.creditsPerHourSaved - b.creditsPerHourSaved;
+    });
+
+  let speed = null;
+  if (base.critical) {
+    const crit = base.buildings.find(b => b.name === base.critical);
+    const options = [];
+    for (let x = 2; x <= 10; x++) {
+      const fast = planCore(chain, demands, stocks, { ...opts, speed: { building: base.critical, x } });
+      const fastCrit = fast.buildings.find(b => b.name === base.critical);
+      const extraInputs = fastCrit.inputs.map(inp => {
+        const before = crit.inputs.find(i => i.name === inp.name);
+        return { name: inp.name, extra: inp.needed - (before ? before.needed : 0) };
+      });
+      const timeSavedOnCrit = Math.max(0, crit.hours - fastCrit.hours);
+      const adjustedPipelinedTime = base.hoursPipelined - timeSavedOnCrit;
+      options.push({
+        x, inputMult: SPEED_INPUT_MULT[x - 1], hours: adjustedPipelinedTime,
+        hoursSaved: timeSavedOnCrit,
+        affordable: fastCrit.inputs.every(inp => inp.coverage >= 1),
+        extraInputs,
+      });
+    }
+    speed = { building: base.critical, options };
+  }
+
+  return { ...base, upgradeRoi, speed };
+}
+
 const LabMath = {
   SPEED_INPUT_MULT, LEVEL_COST_BASE, TIMER_FLOOR, TIMER_STEP, CLAIM_COOLDOWN_MIN,
   normName, buildChain, expand, stageOf,
-  timerAt, levelCost, levelsToFloor, costToFloor, planCore,
+  timerAt, levelCost, levelsToFloor, costToFloor, planCore, planTarget,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = LabMath;
 if (typeof window !== "undefined") window.LabMath = LabMath;

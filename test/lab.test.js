@@ -223,3 +223,52 @@ describe("LabMath timing", () => {
     assert.equal(core.critical, null);
   });
 });
+
+describe("LabMath.planTarget: ROI and speed", () => {
+  const chain = () => LabMath.buildChain(liveBuildings());
+  const demands = [{ product: "warp capsule", units: 10 }];
+
+  test("ROI: critical Foundry first, cost 1.15M*21, hours saved = 200 s", () => {
+    const plan = LabMath.planTarget(chain(), demands, {}, { freeSlots: 10 });
+    assert.equal(plan.upgradeRoi[0].name, "Foundry");
+    assert.equal(plan.upgradeRoi[0].level, 20);
+    assert.equal(plan.upgradeRoi[0].nextLevelCost, 1150000 * 21);
+    near(plan.upgradeRoi[0].hoursSaved, 200 / 3600);
+    near(plan.upgradeRoi[0].creditsPerHourSaved, 1150000 * 21 / (200 / 3600));
+    assert.equal(plan.upgradeRoi[0].levelsToFloor, 380);
+    assert.equal(plan.upgradeRoi[0].costToFloor, LabMath.costToFloor(20, 380));
+    // a non-critical building saves nothing on the pipelined estimate
+    const circuit = plan.upgradeRoi.find(r => r.name === "Circuit Integration Facility");
+    assert.equal(circuit.hoursSaved, 0);
+    assert.equal(circuit.creditsPerHourSaved, null);
+  });
+
+  test("ROI: buildings with nothing to run have no row", () => {
+    const plan = LabMath.planTarget(chain(), demands, { ingots: 5000 }, { freeSlots: 10 });
+    assert.ok(!plan.upgradeRoi.some(r => r.name === "Foundry"));
+  });
+
+  test("speed options for the critical building: x10 = /10 time, x77.7 inputs", () => {
+    const stocks = { gold: 100e6, silver: 100e6, copper: 100e6, platinum: 100e6 };
+    const plan = LabMath.planTarget(chain(), demands, stocks, { freeSlots: 10 });
+    assert.equal(plan.speed.building, "Foundry");
+    assert.equal(plan.speed.options.length, 9);
+    const x2 = plan.speed.options[0];
+    assert.equal(x2.x, 2);
+    near(x2.inputMult, 2.6);
+    near(x2.hours, 2000 * 43 / 2 / 3600 + 2 * 10 / 60);
+    near(x2.hoursSaved, plan.hoursPipelined - x2.hours);
+    assert.equal(x2.affordable, true); // 52M of each <= 100M
+    assert.deepEqual(x2.extraInputs.find(e => e.name === "gold"), { name: "gold", extra: 20000000 * 1.6 });
+    const x10 = plan.speed.options[8];
+    near(x10.inputMult, 77.7);
+    assert.equal(x10.affordable, false); // 1.554B > 100M
+  });
+
+  test("speed is null when nothing needs to run", () => {
+    const plan = LabMath.planTarget(chain(), demands, { "warp capsule": 10 }, { freeSlots: 10 });
+    assert.equal(plan.speed, null);
+    assert.deepEqual(plan.upgradeRoi, []);
+    assert.equal(plan.ready, true);
+  });
+});
