@@ -16,14 +16,16 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   8 NPC types) plus a per-activity bonus panel showing what is *actually* active during
   each activity using the game's real activity-chain semantics (a non-empty activity
   group replaces the item's default group for that activity; empty groups inherit,
-  voyager ← exploring ← default). Every capped stat is listed with current / cap — even
-  at zero investment — with progress bars, over-cap warnings, and alerts for activity
-  overrides that lose value vs what they replace
+  voyager ← exploring ← default). Each activity card lists only the stats that matter
+  there; every capped stat relevant to that activity is shown with current / cap — even
+  at zero investment — with an inline fill bar and the wasted amount when over the cap,
+  plus alerts for activity overrides that lose value vs what they replace
 - **Installs** — an install/replace plan for your unequipped catalysts in two variants
   (full explore / full resources). Every battling suggestion is battle-simulated
   first: if it would drop your win rate, it is filtered out. Includes reinstall guidance
   when a catalyst should be pulled from another item, plus a what-if projection showing
-  the max NPC level you'd reach per NPC type if the whole full-explore plan were applied
+  the max NPC level you'd reach per NPC type if the whole full-explore plan were applied.
+  Every action on a capped stat shows that stat's total in the tab before → after / cap
 - **Inventory** — every unequipped catalyst in one sortable, filterable table (stat,
   rarity, range, activity, value), tagged with what it's already earmarked for (an
   install or a merge group) and, for the rest, a sell advisor that flags catalysts too
@@ -31,8 +33,13 @@ interface, so it cannot spend, craft, equip or change anything on your account.
 - **Merges** — merge chains toward *perfect legendaries* (range 100): which 5-packs to
   merge, success chances, protect-extra recommendations, quantum core costs, and the input
   quality tiers required to stay on the perfect path
-- **Droids & Clones** — per-skill upgrade costs, clone damage multipliers, and the
-  break-even analysis "upgrade existing units to X% vs buy the next unit"
+- **Droids & Clones** — per-skill upgrade costs, clone damage multipliers, the
+  break-even analysis "upgrade existing units to X% vs buy the next unit", and droid
+  survival: exact dodge chance per droid (50% base + maneuverability ÷ 2 + dodge mods,
+  capped at 100%), expected droids alive per action vs the last real action, credits per
+  +1% expected yield for each droid skill so you know which one to buy first, and the
+  road to the no-mods end state: at which maneuverability each laser/probes dodge mod
+  can be recrafted into a single "Rare Resource drop chance" mod (+10 rare instead of +5)
 - **Technology** — all skills with costs, a battle-simulated ranking of the four combat
   skills (levels gained per quantum core), the optimal way to spend the cores you have,
   per-skill cores-to-max, and an account-wide max-out counter with a time-to-cover
@@ -53,12 +60,12 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   cooldown breakdown against the hard 5-minute floor (engine value + crafted mods + Korin
   + the purchased global Cooldown boost, whose tier decays with its remaining time — the
   advice distinguishes "floored only while the boost lasts" from "floored permanently"),
-  the scan reward multiplier, and a droid-dodge mod heuristic once average droid
-  maneuverability gets high
+  the scan reward multiplier, and an exact droid-dodge check: dodge = 50% base +
+  maneuverability ÷ 2 + "Droids dodge chance" mods, capped at 100%, so each dodge mod
+  carries the maneuverability level at which it can go, and is flagged to recraft once
+  the droids no longer need it
 - **History** — every analysis is snapshotted; trend charts for battle benchmark,
   crafting level, currencies, catalyst counts and pet levels
-
-All of the above is also printed by the CLI.
 
 ## Requirements
 
@@ -90,17 +97,6 @@ opened to the network.
 
 Make sure the game is running and you are logged in (the main screen must be loaded).
 
-### CLI
-
-```
-node advisor.js
-```
-
-Prints the full report: player summary, equipped gear, install plans for both
-variants, merge plan, droids & clones, technology, pets.
-
-### Web GUI
-
 ```
 node advisor-server.js
 ```
@@ -116,9 +112,10 @@ recent snapshot immediately (marked as stale) until you analyze fresh.
 
 ## Notes and limits
 
-- **Droid/clone purchase prices**: the game only reports these when you open the
-  Gathering/Battling trainer pages. Open each trainer page once while the GUI runs — the
-  price is captured passively and used from then on.
+- **Droid/clone purchase prices**: until you open the Gathering/Battling trainer pages
+  the advisor uses the known curve (every unit costs 10× the previous one, the 8th costs
+  100B, i.e. 10^(n+3) credits) and marks the price "(curve)". Opening a trainer page once
+  while the GUI runs captures the game's own figure, which then takes precedence.
 - The game window must stay on the logged-in character; re-run **Analyze now** after
   changing gear, skills or pets in-game.
 - All game formulas (merge chances, upgrade costs, pet XP, slot mechanics) were extracted
@@ -133,7 +130,6 @@ recent snapshot immediately (marked as stale) until you analyze fresh.
 
 | File | Purpose |
 | --- | --- |
-| `advisor.js` | CLI report |
 | `advisor-server.js` | Web GUI server (port 8787), serves `public/` |
 | `advisor-core.js` | Analysis pipeline facade (see `lib/`) |
 | `lib/` | Engine modules (constants, value math, CDP reader, install/merge planners, battle rating, units/tech/pets/materials/ship-items advisors) |

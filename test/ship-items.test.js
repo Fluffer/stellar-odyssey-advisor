@@ -123,29 +123,55 @@ describe("planShipItems: cooldown-mod recommendation flips at the floor", () => 
   });
 });
 
-describe("planShipItems: droid-dodge heuristic", () => {
-  test("flags Droids dodge chance as low-value once avg maneuverability >= 50", () => {
-    const state = makeState({ droids: [{ maneuverability: 55 }, { maneuverability: 55 }] });
+describe("planShipItems: droid-dodge mod vs the 100% dodge cap (exact)", () => {
+  test("at maneuverability 90 with two dual mods only the first scheduled item is told to recraft", () => {
+    const state = makeState({ droids: [{ maneuverability: 90 }] });
+    state.ship.laser_slot.bonuses = ["Rare Resource drop chance", "Droids dodge chance"];
+    state.ship.probes_slot.bonuses = ["Rare Resource drop chance", "Droids dodge chance"];
+    const si = planShipItems(state);
+    const laser = si.items.find(i => i.slot === "laser_slot");
+    const probes = si.items.find(i => i.slot === "probes_slot");
+    assert.ok(laser.recommendations.some(r => r.includes("adds nothing") && r.includes("recraft")));
+    assert.ok(!probes.recommendations.some(r => r.includes("adds nothing")), "probes mod still needed until maneuverability 100");
+    assert.ok(probes.recommendations.some(r => r.includes("still needed") && r.includes("At 100% maneuverability")), "probes gets the threshold note");
+  });
+
+  test("flags the mod as adding nothing once every droid is at 100% dodge without it", () => {
+    // 50 + 100/2 = 100 already -> the +10 single mod cannot land at all
+    const state = makeState({ droids: [{ maneuverability: 100 }, { maneuverability: 100 }] });
     state.ship.laser_slot.bonuses = ["Droids dodge chance"];
     const si = planShipItems(state);
     const laser = si.items.find(i => i.slot === "laser_slot");
-    assert.ok(laser.recommendations.some(r => r.includes("Heuristic") && r.includes("Droids dodge chance")));
+    assert.ok(laser.recommendations.some(r => r.includes("Droids dodge chance") && r.includes("adds nothing")));
+    assert.equal(si.droidDodge.avgDodge, 100);
   });
 
-  test("does not flag it below the 50% threshold", () => {
+  test("flags a partially wasted mod when the cap clips it", () => {
+    // 50 + 85/2 = 92.5 without the mod; with +10 -> 100 (capped): only 7.5 of 10 lands
+    const state = makeState({ droids: [{ maneuverability: 85 }] });
+    state.ship.laser_slot.bonuses = ["Droids dodge chance"];
+    const si = planShipItems(state);
+    const laser = si.items.find(i => i.slot === "laser_slot");
+    assert.ok(laser.recommendations.some(r => r.includes("Droids dodge chance") && r.includes("7.5")));
+  });
+
+  test("while the whole mod still lands: no waste flag, only the threshold note", () => {
     const state = makeState({ droids: [{ maneuverability: 33 }] });
     state.ship.laser_slot.bonuses = ["Droids dodge chance"];
     const si = planShipItems(state);
     const laser = si.items.find(i => i.slot === "laser_slot");
-    assert.ok(!laser.recommendations.some(r => r.includes("Heuristic")));
+    assert.ok(!laser.recommendations.some(r => r.includes("adds nothing") || r.includes("lands")));
+    assert.ok(laser.recommendations.some(r => r.includes("still needed") && r.includes("At 100% maneuverability")));
+    assert.equal(si.droidDodge.avgDodge, 76.5);
+    assert.equal(si.droidDodge.modBonus, 10);
   });
 
-  test("does not flag an item without the dodge mod even at high maneuverability", () => {
-    const state = makeState({ droids: [{ maneuverability: 90 }] });
+  test("does not flag an item without the dodge mod even at capped maneuverability", () => {
+    const state = makeState({ droids: [{ maneuverability: 100 }] });
     state.ship.laser_slot.bonuses = ["Rare Resource drop chance"];
     const si = planShipItems(state);
     const laser = si.items.find(i => i.slot === "laser_slot");
-    assert.ok(!laser.recommendations.some(r => r.includes("Heuristic")));
+    assert.ok(!laser.recommendations.some(r => r.includes("Droids dodge chance")));
   });
 });
 

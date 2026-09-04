@@ -265,6 +265,15 @@ function renderInstalls(installs, freed, battleNote, gear, variant, doneSet, pre
         }
         html += '<span style="color:' + dotColor(a.add.rarity) + ';font-weight:600">' + esc(a.add.text) + '</span>';
         if (isNew) html += '<span class="new-badge">new</span>';
+        if (a.capInfo) {
+          const ci = a.capInfo;
+          const tone = capTone(ci.after, ci.cap);
+          html += '<span class="captag" title="' + esc(a.add.stat.replaceAll('_', ' ')) + ' total in this tab before &rarr; after / cap">' +
+            '<span class="dimtext">' + esc(ci.beforeText) + ' &rarr; </span>' +
+            '<b style="color:' + tone.color + '">' + esc(ci.afterText) + '</b>' +
+            '<span class="dimtext"> / ' + esc(ci.capText) + '</span>' +
+            (ci.over ? '<span class="wasted">over cap</span>' : '') + '</span>';
+        }
         if (a.npcDeltas) {
           const parts = Object.keys(a.npcDeltas).map(npc => {
             const d = a.npcDeltas[npc];
@@ -325,40 +334,6 @@ function renderOverrideLosses(list) {
   return html + '</div>';
 }
 
-function renderWarnings(warnings) {
-  if (!warnings.length) return '<div class="empty-note">No cap violations.</div>';
-  let html = '<div class="list warnlist">';
-  for (const w of warnings) {
-    html += '<div class="row"><b>' + esc(w.stat) + '</b> (' + esc(w.ctx) + '): total ' + esc(w.totalText) +
-      ' &gt; cap ' + esc(w.capText) + ' &mdash; wasted ' + esc(w.wastedText) + '</div>';
-  }
-  return html + '</div>';
-}
-
-// Progress bars for every capped stat currently in use, grouped by context
-// (default first). d.capUsage entries: { ctx, stat, total, cap, totalText, capText }.
-function renderCapUsage(list) {
-  if (!list || !list.length) return '<div class="empty-note">No capped stats in use yet.</div>';
-  const byCtx = {};
-  for (const c of list) (byCtx[c.ctx] = byCtx[c.ctx] || []).push(c);
-  const ctxs = Object.keys(byCtx).sort((a, b) => (a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b)));
-  let html = '';
-  for (const ctx of ctxs) {
-    html += '<div class="sub" style="margin-top:10px;text-transform:capitalize">' + esc(actLabel(ctx)) + '</div><div class="caplist">';
-    for (const c of byCtx[ctx]) {
-      const ratio = c.total / c.cap * 100;
-      const width = Math.min(100, ratio);
-      const color = ratio > 100 ? 'var(--bad)' : (ratio >= 80 ? 'var(--warn)' : 'var(--good)');
-      html += '<div class="caprow"><span class="capbar-label">' + esc(c.stat.replaceAll('_', ' ')) +
-        ' <span style="color:var(--dim)">(' + esc(actLabel(c.ctx)) + ')</span></span>';
-      html += '<span class="capbar"><span class="capbar-fill" style="width:' + width.toFixed(1) + '%;background:' + color + '"></span></span>';
-      html += '<span class="capbar-text">' + esc(c.totalText) + ' / ' + esc(c.capText) + '</span></div>';
-    }
-    html += '</div>';
-  }
-  return html;
-}
-
 // Per-activity stat panel (like the game's player-page bonus display):
 // what is active during each activity, with the cap where one exists.
 // d.contextTotals: { ctx: [{ stat, category, total, totalText, cap, capText, relevant }] }
@@ -368,7 +343,9 @@ function renderContextTotals(ct) {
   const catOrder = ['battling', 'boost', 'utility'];
   let html = '<div class="ctxgrid">';
   for (const ctx of order) {
-    const rows = ct[ctx];
+    // Only what actually does something during this activity; inherited
+    // stats with no effect here are noise.
+    const rows = ct[ctx] && ct[ctx].filter(r => r.relevant);
     if (!rows) continue;
     html += '<div class="item"><h3 style="text-transform:capitalize">' + esc(actLabel(ctx)) + '</h3>';
     if (!rows.length) {
@@ -381,19 +358,32 @@ function renderContextTotals(ct) {
     for (const cat of cats) {
       html += '<div class="group-head" style="margin-top:6px"><span>' + esc(cat) + '</span></div>';
       for (const r of byCat[cat]) {
-        const dimmed = !r.relevant;
-        const atCap = r.cap !== null && r.total >= r.cap - 0.001;
-        html += '<div class="cat"' + (dimmed ? ' style="opacity:.45"' : '') + '>';
-        html += '<span>' + esc(r.stat.replaceAll('_', ' ')) + '</span>';
-        html += '<span class="info"><b' + (atCap ? ' style="color:var(--warn)"' : '') + '>' + esc(r.totalText) + '</b>' +
-          (r.capText ? ' <span style="color:var(--dim)">/ ' + esc(r.capText) + (atCap ? ' MAX' : '') + '</span>' : '') +
-          (dimmed ? ' <span style="color:var(--dim)">(no effect here)</span>' : '') + '</span>';
+        const zero = r.total <= 0.0001;
+        html += '<div class="ctxstat' + (zero ? ' zero' : '') + '">';
+        html += '<div class="ctxstat-line"><span>' + esc(r.stat.replaceAll('_', ' ')) + '</span>';
+        if (r.cap === null) {
+          html += '<span class="info"><b>' + esc(r.totalText) + '</b></span></div>';
+        } else {
+          const tone = capTone(r.total, r.cap);
+          html += '<span class="info"><b style="color:' + tone.color + '">' + esc(r.totalText) + '</b>' +
+            '<span class="dimtext"> / ' + esc(r.capText) + '</span>' +
+            (r.wastedText ? '<span class="wasted">wasted ' + esc(r.wastedText) + '</span>' : '') + '</span></div>';
+          html += '<span class="minibar"><span class="minibar-fill" style="width:' + tone.width + '%;background:' + tone.color + '"></span></span>';
+        }
         html += '</div>';
       }
     }
     html += '</div>';
   }
   return html + '</div>';
+}
+
+// Colour + fill width for a capped stat: green under 80%, amber near the
+// cap, red over it. Shared by the activity cards and the install rows.
+function capTone(total, cap) {
+  const ratio = cap > 0 ? total / cap * 100 : 0;
+  const color = ratio > 100.01 ? 'var(--bad)' : (ratio >= 80 ? 'var(--warn)' : 'var(--good)');
+  return { color, width: Math.min(100, ratio) };
 }
 
 // Stable identity for one merge group, used for the "done" checkmark and
@@ -485,12 +475,51 @@ const SKILL_LABELS = {
 function renderUnits(u) {
   let html = '';
   html += '<h2>Droids &amp; clones</h2>';
-  html += '<div class="sub">Upgrade cost: 5000 &times; level &times; e^(0.15&times;level) credits per +0.1% step, per unit, per skill. New units start at 0%.</div>';
+  html += '<div class="sub">Upgrade cost: 5000 &times; level &times; e^(0.15&times;level) credits per +0.1% step, per unit, per skill. New units start at 0%. Unit purchase price: 10New units start at 0%.</div>times; per unit, 8th = 100B (10^(n+3) credits).</div>';
   html += '<div class="cards">';
   html += card('Credits', fmtC(u.credits));
-  html += card('Droids', u.droids.count + ' <span style="font-size:11px;color:var(--dim)">next: ' + (u.droids.nextPrice !== null ? fmtC(u.droids.nextPrice) : 'open trainer page') + '</span>');
-  html += card('Clones', u.clones.count + ' <span style="font-size:11px;color:var(--dim)">next: ' + (u.clones.nextPrice !== null ? fmtC(u.clones.nextPrice) : 'open trainer page') + '</span>');
+  const priceNote = g => ' <span style="font-size:11px;color:var(--dim)">next: ' + fmtC(g.nextPrice) +
+    (g.priceSource === 'extrapolated' ? ' <span title="10x per unit, 8th = 100B; the game confirms it when the trainer page is opened">(curve)</span>' : '') + '</span>';
+  html += card('Droids', u.droids.count + priceNote(u.droids));
+  html += card('Clones', u.clones.count + priceNote(u.clones));
   html += '</div>';
+
+  // --- droid survival ---
+  const sv = u.droids.survival;
+  if (sv && sv.count) {
+    const bd = sv.perDroid[0].breakdown;
+    const uneven = sv.perDroid.some(d => d.dodge !== sv.perDroid[0].dodge);
+    const tone = capTone(sv.avgDodge, 100);
+    html += '<h2>Droid survival</h2>';
+    html += '<div class="sub">dodge = 50% base + maneuverability &divide; 2 + &quot;Droids dodge chance&quot; mods on laser/probes (additive, all droids), capped at 100%. A destroyed droid brings nothing back that action.</div>';
+    html += '<div class="cards">';
+    html += card('Dodge chance' + (uneven ? ' (avg)' : ''), '<span style="color:' + tone.color + '">' + sv.avgDodge.toFixed(1) + '%</span>' +
+      '<span style="font-size:11px;color:var(--dim)"> = ' + bd.base + ' + ' + bd.maneuverability.toFixed(1) + ' + ' + bd.mods + '</span>');
+    html += card('Expected alive / action', sv.expectedAlive.toFixed(2) + ' / ' + sv.count);
+    if (sv.lastAction) {
+      const la = sv.lastAction;
+      const col = la.alive < la.total ? 'var(--warn)' : 'var(--good)';
+      html += card('Last action', '<span style="color:' + col + '">' + la.alive + ' / ' + la.total + '</span> alive');
+    }
+    html += card('Target maneuverability', sv.noModsCap + '%' +
+      '<span style="font-size:11px;color:var(--dim)"> = 100% dodge with no mods' + (sv.cappedCount ? ' &middot; ' + sv.cappedCount + ' droid(s) already at 100% dodge' : '') + '</span>');
+    html += '</div>';
+    // Road to the no-mods end state: dodge mods on laser/probes go one at a
+    // time, each freed slot becomes a single rare-drop mod (+10 vs +5).
+    if (sv.modPlan && sv.modPlan.length) {
+      const slotName = { laser_slot: 'Laser', probes_slot: 'Probes' };
+      html += '<div class="list">';
+      sv.modPlan.forEach((p, i) => {
+        const done = p.removableNow;
+        html += '<div class="row"><span class="num">' + (i + 1) + '</span><span>' +
+          (done ? '<b style="color:var(--good)">Now:</b> ' : '<b>At ' + p.removableAt + '% maneuverability</b> (weakest droid): ') +
+          '<b>' + (slotName[p.slot] || p.slot) + '</b> no longer needs its +' + p.value + ' &quot;Droids dodge chance&quot; mod &mdash; recraft it with a single &quot;Rare Resource drop chance&quot; mod' +
+          (p.value < 10 ? ' (+10 rare instead of +5)' : '') + '. Dodge stays 100% with the remaining mods.</span></div>';
+      });
+      html += '<div class="row"><span class="num">' + (sv.modPlan.length + 1) + '</span><span>With current mods dodge already hits 100% at <b>' + sv.maneuverabilityCap + '%</b> maneuverability; the steps above are what turns the spare dodge into rare-resource drops.</span></div>';
+      html += '</div>';
+    }
+  }
 
   // --- recommendation ---
   html += '<h2>Recommendation</h2><div class="list">';
@@ -501,13 +530,17 @@ function renderUnits(u) {
     if (u.clones.damageBreakEvenLevel !== null) {
       html += '<div class="row"><span class="num">2</span><span><b>Clone break-even: ' + u.clones.damageBreakEvenLevel + '%</b> &mdash; above this level an extra clone would give more damage per credit. You are at ' + u.clones.rows[0].level + '%, so <b>keep upgrading</b>' + (u.clones.nextPrice > u.credits ? ' (the ' + (u.clones.count + 1) + 'th clone costs ' + fmtC(u.clones.nextPrice) + ' anyway)' : '') + '.</span></div>';
     }
-  } else {
-    html += '<div class="row"><span>Clone prices unknown &mdash; open the Battling trainer page in-game once so the advisor can capture them.</span></div>';
   }
   if (u.droids.nextPrice !== null && u.droids.breakEvenLevel !== null) {
     html += '<div class="row"><span class="num">3</span><span><b>Droids:</b> upgrade until <b>' + u.droids.breakEvenLevel + '%</b> (you are at ' + u.droids.rows[0].level + '%) before the ' + (u.droids.count + 1) + 'th droid (' + fmtC(u.droids.nextPrice) + ' + ' + fmtC(u.droids.catchUpCost) + ' catch-up) becomes better value per skill point.</span></div>';
-  } else if (u.droids.nextPrice === null) {
-    html += '<div class="row"><span>Droid prices unknown &mdash; open the Gathering trainer page in-game once.</span></div>';
+  }
+  if (u.droids.bestSkill && u.droids.rows.length) {
+    const rows = u.droids.rows.filter(r => r.creditsPerPctYield !== null).sort((a, b) => a.creditsPerPctYield - b.creditsPerPctYield);
+    const capped = u.droids.rows.filter(r => r.creditsPerPctYield === null);
+    html += '<div class="row"><span class="num">4</span><span><b>Droid skill order:</b> ' +
+      rows.map((r, i) => (i === 0 ? '<b>' : '') + esc(SKILL_LABELS[r.skill] || r.skill) + (i === 0 ? '</b>' : '') + ' (' + fmtC(r.creditsPerPctYield) + ' per +1% yield)').join(', then ') +
+      (capped.length ? '. <span style="color:var(--dim)">' + capped.map(r => esc(SKILL_LABELS[r.skill] || r.skill)).join(', ') + ': no value while the dodge mods stay on &mdash; drop a mod first (see schedule above), then maneuverability pays again up to ' + (u.droids.survival ? u.droids.survival.noModsCap : 100) + '%.</span>' : '.') +
+      ' Maneuverability lifts both common and rare yield through survival; efficiency/storage lift common yield only.</span></div>';
   }
   html += '</div>';
 
@@ -520,7 +553,7 @@ function renderUnits(u) {
   html += '</div>';
 
   // --- tables (real <table>s, click a header to sort) ---
-  const unitSkillColumns = withDamage => {
+  const unitSkillColumns = (withDamage, withYield) => {
     const cols = [
       { label: 'Skill', numeric: false, getValue: r => SKILL_LABELS[r.skill] || r.skill,
         render: r => '<b>' + esc(SKILL_LABELS[r.skill] || r.skill) + '</b>' + (r.uneven ? ' <span style="color:var(--warn)">(units differ)</span>' : '') },
@@ -533,12 +566,18 @@ function renderUnits(u) {
       cols.push({ label: '+dmg/0.1%', numeric: true, getValue: r => r.marginalDamage || 0,
         render: r => r.marginalDamage !== null ? '+' + r.marginalDamage : '-' });
     }
+    if (withYield) {
+      cols.push({ label: '+yield/0.1%', numeric: true, getValue: r => r.marginalYield || 0,
+        render: r => r.marginalYield ? '+' + r.marginalYield.toFixed(4) + '%' : '<span style="color:var(--dim)">capped</span>' });
+      cols.push({ label: 'credits / +1% yield', numeric: true, getValue: r => r.creditsPerPctYield === null ? Infinity : r.creditsPerPctYield,
+        render: r => r.creditsPerPctYield === null ? '-' : fmtC(r.creditsPerPctYield) });
+    }
     return cols;
   };
   html += '<h2>Clone skills (' + u.clones.count + ')</h2><div class="sub">per-skill upgrade costs across all clones (apply-to-all)</div>';
-  html += tableHtml('tbl-clone-skills', u.clones.rows, unitSkillColumns(true));
+  html += tableHtml('tbl-clone-skills', u.clones.rows, unitSkillColumns(true, false));
   html += '<h2>Droid skills (' + u.droids.count + ')</h2><div class="sub">per-skill upgrade costs across all droids (apply-to-all)</div>';
-  html += tableHtml('tbl-droid-skills', u.droids.rows, unitSkillColumns(false));
+  html += tableHtml('tbl-droid-skills', u.droids.rows, unitSkillColumns(false, true));
 
   // --- unit lists ---
   const list = (title, units, skills) => {
@@ -957,10 +996,8 @@ function render(d) {
         '<div class="card"><div class="k">' + esc(npc) + '</div><div class="v">' + lvl + '</div></div>').join('') + '</div>';
     }
     html += '<h2>Active bonuses per activity</h2>';
-    html += '<div class="sub">what actually applies during each activity (a non-empty activity group replaces the default group for that item; empty groups inherit). Capped stats show current / cap.</div>';
+    html += '<div class="sub">what actually applies during each activity (a non-empty activity group replaces the default group for that item; empty groups inherit). Every capped stat that matters here is listed, current / cap &mdash; red means over the cap and wasted.</div>';
     html += renderContextTotals(d.contextTotals);
-    html += '<h2>Stat caps</h2>' + renderCapUsage(d.capUsage);
-    html += '<h2>Cap warnings</h2>' + renderWarnings(d.warnings);
     html += renderOverrideLosses(d.overrideLosses);
   } else if (tab === 'installs') {
     const labels = {

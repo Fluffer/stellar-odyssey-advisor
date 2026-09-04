@@ -1,6 +1,6 @@
 // Shared core for the catalyst & gear advisor.
 // Facade + analysis pipeline; implementation lives in lib/.
-// Used by advisor.js (CLI) and advisor-server.js (GUI).
+// Used by advisor-server.js (GUI) via lib/analyze-worker.js.
 
 const {
   RARITIES, RARITY_MULT, SHIP_ITEM_RARITY_MULT, ITEM_MATCHING_SKILL,
@@ -23,7 +23,7 @@ const {
   projectShip,
 } = require("./lib/battle-rating.js");
 const { planInventory } = require("./lib/inventory.js");
-const { unitStepCost, cumulativeUnitCost, planUnits } = require("./lib/units.js");
+const { unitStepCost, cumulativeUnitCost, unitPrice, planUnits } = require("./lib/units.js");
 const { planTech } = require("./lib/tech.js");
 const { planPets } = require("./lib/pets.js");
 const { planMaterials, NPC_MATERIAL_SOURCES } = require("./lib/materials.js");
@@ -39,7 +39,7 @@ const {
 // ---------------------------------------------------------------------------
 
 // Full analysis. Takes the raw state (from readGameState) and returns a
-// presentation-ready structure shared by the CLI and the GUI.
+// presentation-ready structure for the GUI.
 function analyze(s) {
   const craftLevel = s.craft.crafting_level || 1;
   const bonus = mergeRangeBonus(craftLevel);
@@ -135,22 +135,18 @@ function analyze(s) {
     gear.push(entry);
   }
 
-  const warnings = [];
-  const capUsage = [];
   const totals = statTotalsByContext(s.ship);
-  // Every non-default context INHERITS the default totals, so listing all
-  // contexts verbatim repeats each capped stat six times — including under
-  // activities where the cap never applies (defense during exploring, etc).
-  // Show a (ctx, stat) pair only when it adds information over 'default':
-  //   - ctx 'default' itself (always), or
-  //   - the stat actually does something during that activity AND either its
-  //     total differs from the default total (the activity's own groups add
-  //     it) or its cap differs (block: 40 vs NPCs, 25 in galaxy boss).
+  // Over-cap warnings (Stats tab badge count). Every non-default context
+  // INHERITS the default totals, so a (ctx, stat) pair is only reported
+  // when it adds information over default: the stat does something during
+  // that activity AND its total or cap differs from default (block: 40 vs
+  // NPCs, 25 in galaxy boss).
+  const warnings = [];
   const defTotals = totals.default || {};
   for (const [ctx, stats] of Object.entries(totals)) {
     for (const [stat, total] of Object.entries(stats)) {
       const cap = (STAT_CAPS_BY_CONTEXT[stat] || {})[ctx] ?? STAT_CAPS[stat];
-      if (cap === undefined) continue;
+      if (cap === undefined || total <= cap) continue;
       if (ctx !== "default") {
         const relevant = ACTIVITY_RELEVANT_STATS[ctx];
         if (relevant && !relevant.includes(stat)) continue;
@@ -158,51 +154,14 @@ function analyze(s) {
         const sameAsDefault = Math.abs(total - (defTotals[stat] || 0)) < 0.001 && cap === defCap;
         if (sameAsDefault) continue;
       }
-      if (total > 0) {
-        capUsage.push({
-          ctx, stat, total, cap,
-          totalText: fmtVal(stat, total),
-          capText: fmtVal(stat, cap),
-        });
-      }
-      if (total > cap) {
-        warnings.push({
-          ctx, stat,
-          totalText: fmtVal(stat, total),
-          capText: fmtVal(stat, cap),
-          wastedText: fmtVal(stat, total - cap),
-        });
-      }
+      warnings.push({
+        ctx, stat,
+        totalText: fmtVal(stat, total),
+        capText: fmtVal(stat, cap),
+        wastedText: fmtVal(stat, total - cap),
+      });
     }
   }
-
-  // Always show every capped stat, even at zero investment, so the Battle
-  // tab reads as a complete checklist rather than only what's in use.
-  const presentDefault = new Set(capUsage.filter(c => c.ctx === "default").map(c => c.stat));
-  const allCappedStats = new Set([...Object.keys(STAT_CAPS), ...Object.keys(STAT_CAPS_BY_CONTEXT)]);
-  for (const stat of allCappedStats) {
-    if (presentDefault.has(stat)) continue;
-    const cap = (STAT_CAPS_BY_CONTEXT[stat] || {}).default ?? STAT_CAPS[stat];
-    if (cap === undefined) continue;
-    capUsage.push({ ctx: "default", stat, total: 0, cap, totalText: fmtVal(stat, 0), capText: fmtVal(stat, cap) });
-  }
-  // Block has a second, lower cap specifically in galaxy boss fights (25
-  // vs 40) - always surface that row too, even unused.
-  const blockGalaxybossCap = (STAT_CAPS_BY_CONTEXT.block || {}).galaxyboss;
-  if (blockGalaxybossCap !== undefined && !capUsage.some(c => c.ctx === "galaxyboss" && c.stat === "block")) {
-    capUsage.push({
-      ctx: "galaxyboss", stat: "block", total: 0, cap: blockGalaxybossCap,
-      totalText: fmtVal("block", 0), capText: fmtVal("block", blockGalaxybossCap),
-    });
-  }
-  // default context first, then by usage ratio descending.
-  capUsage.sort((a, b) => {
-    if (a.ctx === "default" && b.ctx !== "default") return -1;
-    if (b.ctx === "default" && a.ctx !== "default") return 1;
-    const ra = a.cap ? a.total / a.cap : 0;
-    const rb = b.cap ? b.total / b.cap : 0;
-    return rb - ra;
-  });
 
   // Two install variants. Both variants fill every specialized tab
   // (exploring/crafting/galaxyboss/dungeons/voyager) — they differ ONLY in
@@ -258,6 +217,14 @@ function analyze(s) {
         text: fmtCat(a.add),
       },
       gainText: fmtVal(a.add.stat, a.gain),
+      // Cap context in this activity: total before -> after vs the cap.
+      capInfo: a.cap !== undefined ? {
+        cap: a.cap, before: a.capTotalBefore, after: a.capTotalAfter,
+        capText: fmtVal(a.add.stat, a.cap),
+        beforeText: fmtVal(a.add.stat, a.capTotalBefore),
+        afterText: fmtVal(a.add.stat, a.capTotalAfter),
+        over: a.capTotalAfter > a.cap + 0.0001,
+      } : null,
       npcDeltas: rating ? rating.npcDeltas : null,
       worstDelta: rating ? rating.worstDelta : null,
     };
@@ -350,29 +317,10 @@ function analyze(s) {
   // Stats that have no effect in a context (e.g. battling stats while
   // crafting) are still active via inherited groups - mark them irrelevant
   // so the GUI can dim them instead of hiding real game state.
-  const CTX_ORDER = ["default", "exploring", "crafting", "galaxyboss", "dungeons", "voyager"];
-  const contextTotals = {};
-  for (const ctx of CTX_ORDER) {
-    const stats = totals[ctx] || {};
-    const relevant = ACTIVITY_RELEVANT_STATS[ctx];
-    contextTotals[ctx] = Object.entries(stats)
-      .filter(([, v]) => v > 0.0001)
-      .map(([stat, total]) => {
-        const cap = (STAT_CAPS_BY_CONTEXT[stat] || {})[ctx] ?? STAT_CAPS[stat];
-        return {
-          stat, total,
-          category: statCategory(stat),
-          totalText: fmtVal(stat, total),
-          cap: cap !== undefined ? cap : null,
-          capText: cap !== undefined ? fmtVal(stat, cap) : null,
-          relevant: !relevant || relevant.includes(stat),
-        };
-      })
-      .sort((a, b) => (b.relevant - a.relevant) || (b.total - a.total));
-  }
+  const contextTotals = buildContextTotals(totals);
 
   return {
-    player, gear, warnings, capUsage, overrideLosses, contextTotals,
+    player, gear, warnings, overrideLosses, contextTotals,
     installs, installsResources, freedTexts,
     mergePlans, mergeRequirements, battleNote, battleBase,
     projection, inventory,
@@ -380,7 +328,46 @@ function analyze(s) {
   };
 }
 
+// Full per-activity stat breakdown for the Battle tab. Chain semantics:
+// totals[ctx] already holds exactly what is active during that activity.
+// Stats that have no effect in a context (e.g. battling stats while
+// crafting) are still active via inherited groups - mark them irrelevant
+// so the GUI can hide them instead of losing real game state. Every capped
+// stat that DOES matter in the activity is listed even at zero, so each
+// card reads as a complete cap checklist; over-cap rows carry the waste.
+function buildContextTotals(totals) {
+  const CTX_ORDER = ["default", "exploring", "crafting", "galaxyboss", "dungeons", "voyager"];
+  const allCapped = new Set([...Object.keys(STAT_CAPS), ...Object.keys(STAT_CAPS_BY_CONTEXT)]);
+  const contextTotals = {};
+  for (const ctx of CTX_ORDER) {
+    const stats = { ...(totals[ctx] || {}) };
+    const relevant = ACTIVITY_RELEVANT_STATS[ctx];
+    const isRelevant = (stat) => !relevant || relevant.includes(stat);
+    for (const stat of allCapped) {
+      if (stats[stat] === undefined && isRelevant(stat)) stats[stat] = 0;
+    }
+    contextTotals[ctx] = Object.entries(stats)
+      .filter(([stat, v]) => v > 0.0001 || allCapped.has(stat))
+      .map(([stat, total]) => {
+        const cap = (STAT_CAPS_BY_CONTEXT[stat] || {})[ctx] ?? STAT_CAPS[stat];
+        const over = cap !== undefined && total > cap + 0.0001;
+        return {
+          stat, total,
+          category: statCategory(stat),
+          totalText: fmtVal(stat, total),
+          cap: cap !== undefined ? cap : null,
+          capText: cap !== undefined ? fmtVal(stat, cap) : null,
+          wastedText: over ? fmtVal(stat, total - cap) : null,
+          relevant: isRelevant(stat),
+        };
+      })
+      .sort((a, b) => (b.relevant - a.relevant) || (b.total - a.total));
+  }
+  return contextTotals;
+}
+
 module.exports = {
+  buildContextTotals,
   RARITIES, RARITY_MULT, SHIP_ITEM_RARITY_MULT, ITEM_MATCHING_SKILL,
   STAT_BASES, STAT_CATEGORIES, ITEM_CATEGORY, ITEM_ACTIVITIES,
   activityChain, MERGE_CHANCE, MERGE_COST, PROTECT_COST, MERGE_RANGE_BONUS, CRAFT_LEVEL_MERGE_BONUS,
@@ -389,7 +376,7 @@ module.exports = {
   catalystValue, effInGroup, groupValue, fmtVal, fmtCat, fmtAct, itemGroups,
   equippedBonuses, battlePlayer, averageMaxLevel, perNpcMaxLevels, projectShip,
   planCatalystMergeGroups, statTotalsByContext, planInstalls, inheritedGroupInfo, planMerges,
-  BATTLING_NPCS, unitStepCost, cumulativeUnitCost, planUnits, planTech,
+  BATTLING_NPCS, unitStepCost, cumulativeUnitCost, unitPrice, planUnits, planTech,
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
   petHoursToNextLevel, planPets, planInventory, planMaterials, NPC_MATERIAL_SOURCES,
   planShipItems,

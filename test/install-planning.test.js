@@ -243,3 +243,56 @@ describe("planInstalls replace bookkeeping", () => {
     assert.ok(Math.abs(defActions[0].gain - 11) < 0.001);
   });
 });
+
+describe("cap context on actions and in contextTotals", () => {
+  test("each action whose stat is capped in its tab carries context total before/after and the per-context cap", () => {
+    const ship = {
+      weapon_slot: { name: "Test Weapon", level: 1, rarity: "normal", catalysts: [] },
+    };
+    const pool = [
+      cat("def1", "defense", "legendary", 100), // 40 -> total 0 -> 40
+      cat("def2", "defense", "legendary", 100), // halved 20, clamped to headroom 10 -> 40 -> 50
+      cat("blk1", "block", "legendary", 100),   // 40, block has no flat cap: default cap 40, galaxyboss 25
+    ];
+    const res = core.planInstalls(ship, pool, {});
+    const byId = Object.fromEntries(res.actions.map(a => [a.add._id, a]));
+    assert.deepEqual(
+      { before: byId.def1.capTotalBefore, after: byId.def1.capTotalAfter, cap: byId.def1.cap },
+      { before: 0, after: 40, cap: 50 }
+    );
+    assert.deepEqual(
+      { before: byId.def2.capTotalBefore, after: byId.def2.capTotalAfter, cap: byId.def2.cap },
+      { before: 40, after: 50, cap: 50 }
+    );
+    // block: per-context cap table (default 40) even though STAT_CAPS has no entry
+    assert.equal(byId.blk1.cap, 40);
+    assert.equal(byId.blk1.capTotalAfter, 40);
+  });
+
+  test("buildContextTotals lists every capped stat relevant to the activity, at zero too, and flags waste", () => {
+    const ship = {
+      weapon_slot: {
+        name: "Test Weapon", level: 1, rarity: "legendary",
+        catalysts: [
+          cat("b1", "block", "legendary", 100, { activity: "default" }),  // 40
+          cat("b2", "block", "legendary", 100, { activity: "default" }),  // 40 (not halved in fixture) -> 80 > cap 40
+        ],
+      },
+    };
+    const ct = core.buildContextTotals(core.statTotalsByContext(ship));
+    const gb = Object.fromEntries(ct.galaxyboss.map(r => [r.stat, r]));
+    // relevant capped stats present even with zero investment
+    assert.equal(gb.lifesteal.total, 0);
+    assert.equal(gb.lifesteal.cap, 36);
+    assert.equal(gb.stun.total, 0);
+    // galaxyboss block cap is 25, inherited 80 -> wasted 55
+    assert.equal(gb.block.cap, 25);
+    assert.equal(gb.block.wastedText, "55.00%");
+    // utility caps do nothing in galaxy boss -> not listed as zero rows
+    assert.equal(gb.fuel_efficiency, undefined);
+    // crafting: block is not relevant there -> present only as inherited, marked irrelevant
+    const cr = Object.fromEntries(ct.crafting.map(r => [r.stat, r]));
+    assert.equal(cr.block.relevant, false);
+    assert.equal(cr.stun, undefined);
+  });
+});

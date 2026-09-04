@@ -3,4 +3,3 @@ snapshots/
 
 # server logs and one-off output dumps
 *.log
-advisor-out.txt
