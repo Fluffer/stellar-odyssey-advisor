@@ -1,0 +1,101 @@
+// Behaviour locks for the lab bottleneck planner (public/lab-math.js +
+// lib/lab.js). The fixture is the live 10-building chain at level 20.
+"use strict";
+const { test, describe } = require("node:test");
+const assert = require("node:assert/strict");
+const LabMath = require("../public/lab-math.js");
+
+// Live chain shape (LaboratoryStore.buildings), all level 20.
+function liveBuildings() {
+  const b = (building, currency_use, material_use, produce, input, timer) =>
+    ({ building, level: 20, currency_use, material_use, produce, input, output: 1, timer });
+  return [
+    b("Foundry", ["gold", "silver", "copper", "platinum"], [], ["ingots"], 10000, 45),
+    b("Refinery", ["diamond", "ruby", "emerald", "sapphire"], [], ["refined_crystals"], 10000, 45),
+    b("Crystal Synthesis Lab", ["water", "nitrogen", "sulfur", "carbon"], [], ["high_end_crystals"], 10000, 45),
+    b("Noble Gas Processing Station", ["helium", "methane"], [], ["propulsors"], 10000, 45),
+    b("Nanotech Complex", ["ammonia", "hydrogen"], [], ["nanoconductors"], 10000, 45),
+    b("Circuit Integration Facility", ["silicon", "cobalt"], [], ["microcircuits"], 1000, 30),
+    b("Energetic Fusion Center", ["argon", "dark matter"], [], ["fusion cells"], 1000, 30),
+    b("Module Assembly Plant", [], ["ingots", "refined crystals", "microcircuits"], ["fuel cell casing"], 20, 30),
+    b("Fuel Lab", [], ["high end crystals", "propulsors", "nanoconductors", "fusion cells"], ["unstable fuel"], 20, 30),
+    b("Space Capsule Complex", [], ["unstable fuel", "fuel cell casing"], ["warp capsule"], 10, 30),
+  ];
+}
+const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, (msg || "") + ` expected ${b} got ${a}`);
+
+describe("LabMath.normName / buildChain", () => {
+  test("normalises underscores, case and whitespace", () => {
+    assert.equal(LabMath.normName("Refined_Crystals "), "refined crystals");
+    assert.equal(LabMath.normName("dark matter"), "dark matter");
+  });
+
+  test("builds the product index with normalised input names and kinds", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    assert.equal(chain.list.length, 10);
+    const plant = chain.byProduct["fuel cell casing"];
+    assert.equal(plant.name, "Module Assembly Plant");
+    assert.deepEqual(plant.inputs, [
+      { name: "ingots", kind: "material" },
+      { name: "refined crystals", kind: "material" },
+      { name: "microcircuits", kind: "material" },
+    ]);
+    assert.equal(chain.byProduct["refined crystals"].name, "Refinery");
+    assert.deepEqual(chain.byProduct["fusion cells"].inputs, [
+      { name: "argon", kind: "currency" }, { name: "dark matter", kind: "currency" },
+    ]);
+  });
+});
+
+describe("LabMath.expand", () => {
+  test("10 capsules from empty stocks: full chain requirement", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const r = LabMath.expand(chain, [{ product: "warp capsule", units: 10 }], {});
+    assert.equal(r.runs["Space Capsule Complex"], 10);
+    assert.equal(r.runs["Module Assembly Plant"], 100);
+    assert.equal(r.runs["Fuel Lab"], 100);
+    for (const name of ["Foundry", "Refinery", "Crystal Synthesis Lab", "Noble Gas Processing Station",
+      "Nanotech Complex", "Circuit Integration Facility", "Energetic Fusion Center"]) {
+      assert.equal(r.runs[name], 2000, name);
+    }
+    assert.equal(r.gross["ingots"], 2000);
+    assert.equal(r.gross["unstable fuel"], 100);
+    for (const c of ["gold", "silver", "copper", "platinum", "diamond", "ruby", "emerald", "sapphire",
+      "water", "nitrogen", "sulfur", "carbon", "helium", "methane", "ammonia", "hydrogen"]) {
+      assert.equal(r.raw[c], 20000000, c);
+    }
+    for (const c of ["silicon", "cobalt", "argon", "dark matter"]) assert.equal(r.raw[c], 2000000, c);
+  });
+
+  test("stock netting: 5000 ingots in stock -> Foundry runs 0, gross unchanged", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const r = LabMath.expand(chain, [{ product: "warp capsule", units: 10 }], { ingots: 5000 });
+    assert.equal(r.runs["Foundry"], 0);
+    assert.equal(r.gross["ingots"], 2000);
+    assert.equal(r.raw["gold"], undefined);
+    assert.equal(r.runs["Refinery"], 2000);
+  });
+
+  test("partial stock: 500 casings in stock -> plant runs 50", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const r = LabMath.expand(chain, [{ product: "warp capsule", units: 100 }], { "fuel cell casing": 500 });
+    assert.equal(r.runs["Module Assembly Plant"], 500);
+    assert.equal(r.runs["Foundry"], 10000);
+  });
+
+  test("a demand for a raw currency or an unknown product lands in raw", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const r = LabMath.expand(chain, [{ product: "gold", units: 5 }, { product: "unobtainium", units: 1 }], {});
+    assert.equal(r.raw["gold"], 5);
+    assert.equal(r.raw["unobtainium"], 1);
+    assert.deepEqual(r.runs, {});
+  });
+
+  test("stageOf: raw 0, intermediates 1, casing/fuel 2, capsule 3", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    assert.equal(LabMath.stageOf(chain, "gold"), 0);
+    assert.equal(LabMath.stageOf(chain, "ingots"), 1);
+    assert.equal(LabMath.stageOf(chain, "fuel cell casing"), 2);
+    assert.equal(LabMath.stageOf(chain, "warp capsule"), 3);
+  });
+});
