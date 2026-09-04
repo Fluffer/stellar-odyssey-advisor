@@ -145,7 +145,7 @@ function planCore(chain, demands, stocks, opts) {
     const coverage = needed > 0 ? stock / needed : 1;
     const units = (demands || []).reduce((s, d) => s + (Number(d.units) || 0), 0);
     return { name, needed, stock, coverage, unitsSupported: needed > 0 ? Math.floor(coverage * units) : units };
-  }).sort((a, b) => b.coverage - a.coverage);
+  }).sort((a, b) => a.coverage - b.coverage);
 
   const shortRaw = raw.filter(r => r.coverage < 1);
   const binding = shortRaw.length ? { name: shortRaw[0].name, coverage: shortRaw[0].coverage } : null;

@@ -153,7 +153,11 @@ describe("LabMath timing", () => {
 
   test("raw coverage, binding and unitsSupported", () => {
     const chain = LabMath.buildChain(liveBuildings());
-    const stocks = { gold: 40e6, silver: 40e6, copper: 40e6, platinum: 5e6 };
+    const stocks = { gold: 40e6, silver: 40e6, copper: 40e6, platinum: 5e6,
+      diamond: 40e6, ruby: 40e6, emerald: 40e6, sapphire: 40e6,
+      water: 40e6, nitrogen: 40e6, sulfur: 40e6, carbon: 40e6,
+      helium: 40e6, methane: 40e6, ammonia: 40e6, hydrogen: 40e6,
+      silicon: 4e6, cobalt: 4e6, argon: 4e6, "dark matter": 4e6 };
     const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], stocks, { freeSlots: 10 });
     const plat = core.raw.find(r => r.name === "platinum");
     near(plat.coverage, 0.25);
@@ -162,6 +166,19 @@ describe("LabMath timing", () => {
     const gold = core.raw.find(r => r.name === "gold");
     near(gold.coverage, 2);
     assert.equal(gold.unitsSupported, 20);
+  });
+
+  test("binding is the LOWEST coverage when several raw inputs are short", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const stocks = { gold: 40e6, silver: 40e6, copper: 40e6, platinum: 5e6,
+      diamond: 40e6, ruby: 40e6, emerald: 40e6, sapphire: 40e6,
+      water: 40e6, nitrogen: 2e6, sulfur: 40e6, carbon: 40e6,
+      helium: 40e6, methane: 40e6, ammonia: 40e6, hydrogen: 40e6,
+      silicon: 4e6, cobalt: 4e6, argon: 4e6, "dark matter": 4e6 };
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], stocks, { freeSlots: 10 });
+    assert.equal(core.binding.name, "nitrogen");
+    assert.equal(core.raw[0].name, "nitrogen");
+    assert.equal(core.raw[1].name, "platinum");
   });
 
   test("ready when every raw input is covered; coverage is 1 when nothing is needed", () => {
