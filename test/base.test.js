@@ -299,6 +299,16 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     const plan = BM.planBase(inp);
     assert.ok(!plan.buyFirst.includes("Aeroforge"));
   });
+
+  test("defaultTarget: warp-capsule modules default to 10, everything else to 50", () => {
+    assert.equal(BM.MODULES.find(m => m.name === "Research lab").defaultTarget, 10);
+    const inp = input();
+    inp.levels = {};
+    const plan = BM.planBase(inp);
+    assert.equal(plan.targets.find(t => t.name === "Research lab").to, 10);
+    assert.equal(plan.targets.find(t => t.name === "Battling Trainer (PvP)").to, 10);
+    assert.equal(plan.targets.find(t => t.name === "Stellarium miner").to, 50);
+  });
 });
 
 describe("lib/base.js planBaseFromState", () => {

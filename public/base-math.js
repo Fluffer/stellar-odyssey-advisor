@@ -9,18 +9,23 @@
 // ESTIMATES and every number derived from it is flagged.
 const PROVENANCE = { client: "1.1.1", bundle: "index-BiPcVSdi.js" };
 
+// defaultTarget: the level a fresh (no stored override) target box shows.
+// 50 for every module except the two warp-capsule ones, which cost twice as
+// much per level as any other material (charged from a single, expensive
+// chain) and make the default view look hopeless at 50 (2,550 capsules =~
+// 250 days); 10 keeps the default view reachable.
 const MODULES = [
-  { name: "Stellarium miner", type: "passive", setup: false, needs: [], materials: ["microcircuits", "fusion cells"], halfLevel: false, baseAmount: 1 },
-  { name: "Material generator", type: "passive", setup: true, needs: ["Stellarium miner"], materials: ["aerolite"], halfLevel: false, baseAmount: 200 },
-  { name: "Metal scrap generator", type: "passive", setup: false, needs: ["Stellarium miner"], materials: ["cryovita"], halfLevel: false, baseAmount: 1500 },
-  { name: "Resource miner", type: "passive", setup: true, needs: ["Stellarium miner"], materials: ["ferricrystal"], halfLevel: false, baseAmount: 20000 },
-  { name: "Quantum server", type: "passive", setup: false, needs: ["Material generator"], materials: ["microcircuits"], halfLevel: true, baseAmount: 1 },
-  { name: "Craftron 3000", type: "active", setup: true, needs: ["Metal scrap generator"], materials: ["luminaris"], halfLevel: false, baseAmount: 1 },
-  { name: "Fuel facility", type: "passive", setup: false, needs: ["Resource miner"], materials: ["fusion cells"], halfLevel: false, baseAmount: 5 },
-  { name: "Research lab", type: "passive", setup: false, needs: ["Quantum server", "Craftron 3000", "Fuel facility"], materials: ["warp capsule"], halfLevel: false, baseAmount: 1 },
-  { name: "Item booster", type: "active", setup: true, needs: ["Research lab"], materials: ["fusion cells"], halfLevel: false, baseAmount: 1 },
-  { name: "Laboratory enhancer", type: "passive", setup: false, needs: ["Research lab"], materials: ["microcircuits"], halfLevel: true, baseAmount: 1 },
-  { name: "Battling Trainer (PvP)", type: "passive", setup: false, needs: ["Laboratory enhancer", "Item booster"], materials: ["warp capsule"], halfLevel: false, baseAmount: 1 },
+  { name: "Stellarium miner", type: "passive", setup: false, needs: [], materials: ["microcircuits", "fusion cells"], halfLevel: false, baseAmount: 1, defaultTarget: 50 },
+  { name: "Material generator", type: "passive", setup: true, needs: ["Stellarium miner"], materials: ["aerolite"], halfLevel: false, baseAmount: 200, defaultTarget: 50 },
+  { name: "Metal scrap generator", type: "passive", setup: false, needs: ["Stellarium miner"], materials: ["cryovita"], halfLevel: false, baseAmount: 1500, defaultTarget: 50 },
+  { name: "Resource miner", type: "passive", setup: true, needs: ["Stellarium miner"], materials: ["ferricrystal"], halfLevel: false, baseAmount: 20000, defaultTarget: 50 },
+  { name: "Quantum server", type: "passive", setup: false, needs: ["Material generator"], materials: ["microcircuits"], halfLevel: true, baseAmount: 1, defaultTarget: 50 },
+  { name: "Craftron 3000", type: "active", setup: true, needs: ["Metal scrap generator"], materials: ["luminaris"], halfLevel: false, baseAmount: 1, defaultTarget: 50 },
+  { name: "Fuel facility", type: "passive", setup: false, needs: ["Resource miner"], materials: ["fusion cells"], halfLevel: false, baseAmount: 5, defaultTarget: 50 },
+  { name: "Research lab", type: "passive", setup: false, needs: ["Quantum server", "Craftron 3000", "Fuel facility"], materials: ["warp capsule"], halfLevel: false, baseAmount: 1, defaultTarget: 10 },
+  { name: "Item booster", type: "active", setup: true, needs: ["Research lab"], materials: ["fusion cells"], halfLevel: false, baseAmount: 1, defaultTarget: 50 },
+  { name: "Laboratory enhancer", type: "passive", setup: false, needs: ["Research lab"], materials: ["microcircuits"], halfLevel: true, baseAmount: 1, defaultTarget: 50 },
+  { name: "Battling Trainer (PvP)", type: "passive", setup: false, needs: ["Laboratory enhancer", "Item booster"], materials: ["warp capsule"], halfLevel: false, baseAmount: 1, defaultTarget: 10 },
 ];
 
 // Which lab building makes each module material. baseTier buildings are
@@ -229,9 +234,10 @@ function planBase(input) {
   const totalStellariumLeft = last ? last.cumulative : 0;
   const perDay = stellariumPerDay(starRate, minerBoost);
 
-  // Targets: every module with a level box; default 50.
+  // Targets: every module with a level box; default is the module's
+  // defaultTarget (50, 10 for the warp-capsule modules).
   const levels = input.levels || {};
-  const targetList = modules.map(m => ({ name: m.name, toLevel: levels[m.name] !== undefined ? levels[m.name] : 50 }));
+  const targetList = modules.map(m => ({ name: m.name, toLevel: levels[m.name] !== undefined ? levels[m.name] : (m.defaultTarget || 50) }));
   const mats = materialsFor(targetList, modules);
   const targets = mats.perModule.map(pm => {
     const m = byName[pm.name];
