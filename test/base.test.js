@@ -276,3 +276,74 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     assert.ok(plan.stockpile.find(s => s.material === "microcircuits").bought === false);
   });
 });
+
+describe("lib/base.js planBaseFromState", () => {
+  const { planBaseFromState, buildBaseInput } = require("../lib/base.js");
+  const liveState = () => ({
+    lab: { buildings: [
+      { building: "Circuit Integration Facility", level: 20, currency_use: ["silicon", "cobalt"], material_use: [], produce: ["microcircuits"], input: 1000, output: 1, timer: 30 },
+      { building: "Energetic Fusion Center", level: 20, currency_use: ["argon", "dark matter"], material_use: [], produce: ["fusion cells"], input: 1000, output: 1, timer: 30 },
+    ], queue: [], queueSlots: 10 },
+    baseLab: { buildings: [], nextBaseCost: 0, nextBuildingCost: 0 },
+    base: null,
+    account: { registered: 1786174949, lifetimeCredits: 5.4e9 },
+    currentSystem: { name: "Torvornir", star: "A type", bodies: ["Comet", "Gas Planet"] },
+    bookmarks: [{ name: "Loxgyn", star: "M type", bodies: ["Comet"] }, { name: "Vak", star: "Black Hole", bodies: ["Belt"] }],
+    gameVersion: "1.1.2", clientBundle: "index-BiPcVSdi.js",
+    commonResources: { gold: 1e6 }, rareCurrencies: { silicon: 1e6, cobalt: 1e6, argon: 1e5, dark_matter: 1e5 },
+    materials: [{ name: "ingots", quantity: 5000 }, { name: "refined crystals", quantity: 5000 }, { name: "high end crystals", quantity: 5000 },
+      { name: "propulsors", quantity: 5000 }, { name: "nanoconductors", quantity: 5000 }, { name: "microcircuits", quantity: 1600 }, { name: "fusion cells", quantity: 1600 }],
+    ship: {}, player: { skills: { base_module_efficiency_boost: 0 } },
+  });
+
+  test("pre phase: founding ready, location advice, stockpile and upkeep present, live null", () => {
+    const b = planBaseFromState(liveState(), { now: 1786174949 + 27 * 86400 });
+    assert.equal(b.phase, "pre");
+    assert.equal(b.founding.ready, true);
+    assert.equal(b.location.current.rate, 6);
+    assert.equal(b.location.best.name, "Vak");
+    assert.equal(b.location.best.rate, 8);
+    assert.equal(b.location.chosen.star, "A type");
+    assert.deepEqual(b.location.bodies.map(x => x.activity), ["exploring", "crafting"]);
+    assert.equal(b.input.avgDaily, 200000000);
+    assert.equal(b.plan.upkeep.passiveCount, 9);
+    assert.ok(b.plan.stockpile.find(s => s.material === "microcircuits").bought);
+    assert.deepEqual(b.plan.buyFirst, ["Aeroforge", "Cryovault", "Ferric Mill", "Prism Nexus"]);
+    assert.equal(b.live, null);
+    assert.equal(b.labPanelHint, true, "base-tier list empty and nextBaseCost 0 -> panel never opened");
+    assert.equal(b.provenance.live, "1.1.2"); assert.equal(b.provenance.liveBundle, "index-BiPcVSdi.js"); assert.equal(b.provenance.drift, false);
+    const drifted = planBaseFromState(Object.assign(liveState(), { clientBundle: "index-ZZZZ.js" }), { now: 1786174949 + 27 * 86400 });
+    assert.equal(drifted.provenance.drift, true);
+  });
+
+  test("opts.star chooses the ETA star; opts.levels override targets", () => {
+    const b = planBaseFromState(liveState(), { star: "Black Hole", levels: { "Stellarium miner": 100 }, now: 1786174949 + 27 * 86400 });
+    assert.equal(b.location.chosen.rate, 8);
+    assert.equal(b.plan.targets.find(t => t.name === "Stellarium miner").to, 100);
+  });
+
+  test("live phase from a bundle-shaped base", () => {
+    const s = liveState();
+    s.base = { _id: "b1", name: "Home", stellarium: 2, nextStellariumTick: 1788600000, catalystUpkeepReduction: 0,
+      modules: [{ _id: "m1", name: "Stellarium miner", type: "passive", unlocked: true, level: 20, tier: 2, needs: [], tickCounter: 1, active: true }] };
+    const b = planBaseFromState(s, { now: 1786174949 + 27 * 86400 });
+    assert.equal(b.phase, "live");
+    assert.equal(b.live.name, "Home");
+    const miner = b.live.modules.find(m => m.name === "Stellarium miner");
+    assert.equal(miner.level, 20); assert.equal(miner.nextLevelCost, 21); assert.equal(miner.nextTierCost, 3);
+    near(miner.boost, 20 * 1.02);
+    assert.equal(b.live.nextUnlock.name, "Material generator");
+    assert.equal(b.live.nextUnlock.cost, 1);
+    assert.equal(b.live.nextUnlock.etaDays, 0, "2 stellarium held >= cost 1");
+    assert.equal(b.plan.upkeep.passiveCount, 1, "live: only unlocked passive modules pay");
+  });
+
+  test("degraded: missing account, currentSystem, bookmarks, lab -> no throw", () => {
+    const b = planBaseFromState({ materials: [] }, {});
+    assert.equal(b.phase, "pre");
+    assert.equal(b.founding.ready, false);
+    assert.equal(b.location.current.star, null);
+    assert.equal(b.input.avgDaily, 0);
+    assert.ok(Array.isArray(b.plan.stockpile));
+  });
+});
