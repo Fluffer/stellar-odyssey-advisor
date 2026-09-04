@@ -1175,14 +1175,13 @@ function renderBase(b) {
 
   // --- modules / targets ---
   html += '<h2>Modules and targets</h2><div class="sub">unlock order follows the needs tree; set the level you want to reach in each box (saved in this browser)</div>';
-  const unlockByName = {}; for (const u of plan.unlocks) unlockByName[u.name] = u;
   const rows = plan.unlocks.map(u => Object.assign({}, u, plan.targets.find(t => t.name === u.name) || {}));
   html += tableHtml('tbl-base-modules', rows, [
     { label: 'Module', numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' + (r.unlocked ? ' <span style="color:var(--good)">unlocked</span>' : '') },
     { label: 'Type', numeric: false, getValue: r => r.type || '', render: r => esc(r.type || '') },
     { label: 'Unlock', numeric: true, getValue: r => r.cost, render: r => r.unlocked ? '-' : r.cost + '<span class="est"> (' + r.cumulative + ' cum. &middot; ' + fmtDays(r.daysToUnlock) + ')</span>' },
     { label: 'Materials', numeric: false, getValue: r => (r.materials || []).join(','), render: r => (r.materials || []).map(esc).join(', ') },
-    { label: 'Target level', numeric: true, getValue: r => r.to || 0, render: r => '<input class="pet-input base-input" type="number" min="0" value="' + (r.to || 0) + '" onchange="setBaseLevel(' + jsStr(r.name) + ', this.value)">' + (r.from ? '<span class="est"> from ' + r.from + '</span>' : '') },
+    { label: 'Target level', numeric: true, getValue: r => r.to || 0, render: r => '<input class="pet-input base-input" type="number" min="0" value="' + (r.to || 0) + '" onchange="setBaseLevel(' + esc(jsStr(r.name)) + ', this.value)">' + (r.from ? '<span class="est"> from ' + r.from + '</span>' : '') },
     { label: 'Cost to target', numeric: true, getValue: r => r.perMaterial || 0, render: r => fmtC(r.perMaterial || 0) + ' of each' },
     { label: 'Boost at target', numeric: true, getValue: r => r.boostAtTarget || 0, render: r => (r.boostAtTarget || 0).toFixed(0) + '%' },
     { label: 'Upkeep / h at target', numeric: true, getValue: r => r.upkeepPerHourAtTarget || 0, render: r => r.type === 'active' ? '-' : fmtC(r.upkeepPerHourAtTarget || 0) },
