@@ -46,8 +46,12 @@ function buildChain(buildings) {
 // Expand demands through the chain. Existing stock of an intermediate is
 // consumed first (once - `remaining` is mutated as we go); the shortfall is
 // produced and its inputs demanded in turn. Names no building produces are
-// raw and accumulate in `raw`.
-function expand(chain, demands, stocks) {
+// raw and accumulate in `raw`. `opts.netTopLevel` (default true) controls
+// whether a demand's own product is netted against stock; when false the
+// demand is treated as additional units on top of stock, though the stock
+// of everything the demand needs (its inputs, at depth > 0) is still netted.
+function expand(chain, demands, stocks, opts) {
+  const netTopLevel = !(opts && opts.netTopLevel === false);
   const remaining = {};
   for (const [k, v] of Object.entries(stocks || {})) remaining[normName(k)] = Number(v) || 0;
   const runs = {}, gross = {}, raw = {};
@@ -56,9 +60,9 @@ function expand(chain, demands, stocks) {
     const b = chain.byProduct[product];
     if (!b) { raw[product] = (raw[product] || 0) + units; return; }
     gross[product] = (gross[product] || 0) + units;
-    const have = remaining[product] || 0;
+    const have = (netTopLevel || depth > 0) ? (remaining[product] || 0) : 0;
     const use = Math.min(have, units);
-    remaining[product] = have - use;
+    if (use > 0) remaining[product] = have - use;
     const toProduce = units - use;
     const batches = Math.ceil(Math.max(0, toProduce) / b.output);
     runs[b.name] = (runs[b.name] || 0) + batches;
@@ -98,7 +102,8 @@ function costToFloor(level, n) {
 
 // Core plan: expansion + per-building timing + raw coverage + the two chain
 // estimates. Pure; `opts.levelOverrides` / `opts.speed` let ROI and speed
-// analysis re-run it with one building changed.
+// analysis re-run it with one building changed. The demanded product's own
+// stock is netted unless `opts.netTopLevel === false`.
 function planCore(chain, demands, stocks, opts) {
   opts = opts || {};
   const freeSlots = Math.max(1, opts.freeSlots || 1);
@@ -119,7 +124,7 @@ function planCore(chain, demands, stocks, opts) {
   } : chain;
   if (speedList.length) for (const b of chainUsed.list) if (!chainUsed.byProduct[b.product]) chainUsed.byProduct[b.product] = b;
 
-  const ex = expand(chainUsed, demands, stockOf);
+  const ex = expand(chainUsed, demands, stockOf, { netTopLevel: opts.netTopLevel !== false });
 
   const buildings = chainUsed.list.map(b => {
     const level = overrides[b.name] !== undefined ? overrides[b.name] : b.level;

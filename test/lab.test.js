@@ -364,3 +364,44 @@ describe("planLab (lib/lab.js)", () => {
     assert.equal(lab.targets, null);
   });
 });
+
+describe("target product is not netted against its own stock (additional capsules)", () => {
+  test("expand with netTopLevel:false ignores stock of the demanded product but still nets intermediates", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const stocks = { "warp capsule": 15, "fuel cell casing": 100 };
+    const netted = LabMath.expand(chain, [{ product: "warp capsule", units: 10 }], stocks);
+    assert.equal(netted.runs["Space Capsule Complex"], 0);
+    const extra = LabMath.expand(chain, [{ product: "warp capsule", units: 10 }], stocks, { netTopLevel: false });
+    assert.equal(extra.runs["Space Capsule Complex"], 10);
+    assert.equal(extra.runs["Module Assembly Plant"], 0, "casings in stock still count");
+    assert.equal(extra.runs["Fuel Lab"], 100);
+  });
+
+  test("planCore forwards netTopLevel", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], { "warp capsule": 15 }, { freeSlots: 10, netTopLevel: false });
+    assert.equal(core.buildings.find(b => b.name === "Space Capsule Complex").unitsToRun, 10);
+    assert.equal(core.ready, false);
+  });
+
+  test("planLab: capsule target is additional capsules, founding still nets stock, capsulesInStock exposed", () => {
+    const { planLab } = require("../lib/lab.js");
+    const state = {
+      lab: { buildings: liveBuildings(), queue: [], queueSlots: 10 },
+      commonResources: {}, rareCurrencies: {},
+      materials: [
+        { name: "warp capsule", quantity: 15 },
+        { name: "ingots", quantity: 5000 }, { name: "refined crystals", quantity: 5000 },
+        { name: "high end crystals", quantity: 5000 }, { name: "propulsors", quantity: 5000 },
+        { name: "nanoconductors", quantity: 5000 },
+      ],
+    };
+    const lab = planLab(state, { capsules: 10 });
+    assert.equal(lab.capsulesInStock, 15);
+    const complex = lab.targets.capsules.buildings.find(b => b.name === "Space Capsule Complex");
+    assert.equal(complex.unitsToRun, 10);
+    assert.equal(lab.targets.capsules.ready, false);
+    assert.equal(lab.targets.baseFounding.ready, true);
+    assert.equal(lab.targets.capsules.afterFounding.hoursPipelined > 0, true);
+  });
+});

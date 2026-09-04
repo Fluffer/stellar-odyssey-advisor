@@ -976,18 +976,19 @@ function renderLab(lab) {
   const capsules = labCapsuleTarget(lab.capsulesDefault);
   const chain = LM.buildChain(lab.chain);
   const opts = { freeSlots: lab.freeSlots };
+  const capsuleOpts = Object.assign({ netTopLevel: false }, opts);
   const demand = [{ product: 'warp capsule', units: capsules }];
-  const plan = LM.planTarget(chain, demand, lab.stocks, opts);
+  const plan = LM.planTarget(chain, demand, lab.stocks, capsuleOpts);
   const afterStocks = Object.assign({}, lab.stocks);
   for (const b of lab.foundingBundle) afterStocks[b.product] = Math.max(0, (afterStocks[b.product] || 0) - b.units);
-  const after = LM.planCore(chain, demand, afterStocks, opts);
+  const after = LM.planCore(chain, demand, afterStocks, capsuleOpts);
   const founding = lab.targets.baseFounding;
 
-  let html = '<div class="sub">Chain from the live Laboratory: each unit consumes its building\'s input of EVERY listed resource; timer = base &minus; 0.1 s per level (floor 5 s); level k costs 1.15M &times; k credits. Queued units are not counted; stocks are treated as static. Both targets below share the same stock.</div>';
+  let html = '<div class="sub">Chain from the live Laboratory: each unit consumes its building\'s input of EVERY listed resource; timer = base &minus; 0.1 s per level (floor 5 s); level k costs 1.15M &times; k credits. Queued units are not counted; stocks are treated as static. The capsule target is ADDITIONAL capsules on top of what you hold; both targets share the same stock.</div>';
 
   // --- cards ---
   html += '<div class="cards">';
-  html += card('Warp capsule target', '<input class="pet-input lab-input" type="number" min="1" value="' + capsules + '" onchange="setLabCapsules(this.value)"> capsules');
+  html += card('Warp capsule target', '<input class="pet-input lab-input" type="number" min="1" value="' + capsules + '" onchange="setLabCapsules(this.value)"> capsules <span class="dimtext">(' + fmtC(lab.capsulesInStock || 0) + ' in stock)</span>');
   html += card('Chain time (pipelined)', fmtHours(plan.hoursPipelined) +
     '<span style="font-size:11px;color:var(--dim)"> claim &amp; re-queue every 10 min &middot; sequential ' + fmtHours(plan.hoursSequential) + '</span>');
   if (plan.binding) {
