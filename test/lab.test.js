@@ -109,3 +109,100 @@ describe("LabMath.expand", () => {
     assert.equal(LabMath.stageOf(chain, "warp capsule"), 3);
   });
 });
+
+describe("LabMath timing", () => {
+  test("timerAt: 0.1 s per level down to the 5 s floor", () => {
+    near(LabMath.timerAt(45, 20), 43);
+    near(LabMath.timerAt(30, 20), 28);
+    assert.equal(LabMath.timerAt(45, 500), 5);
+  });
+
+  test("levelCost / levelsToFloor / costToFloor", () => {
+    assert.equal(LabMath.levelCost(1), 1150000);
+    assert.equal(LabMath.levelCost(21), 24150000);
+    assert.equal(LabMath.levelsToFloor(45, 20), 380);
+    assert.equal(LabMath.levelsToFloor(45, 400), 0);
+    // sum_{k=21}^{22} 1.15M*k = 1.15M*43
+    assert.equal(LabMath.costToFloor(20, 2), 1150000 * 43);
+  });
+
+  test("planCore for 10 capsules from empty stocks, 10 free slots", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {}, { freeSlots: 10 });
+    const by = Object.fromEntries(core.buildings.map(b => [b.name, b]));
+    assert.equal(by["Foundry"].stage, 1);
+    assert.equal(by["Module Assembly Plant"].stage, 2);
+    assert.equal(by["Space Capsule Complex"].stage, 3);
+    near(by["Foundry"].timerNow, 43);
+    near(by["Foundry"].seconds, 2000 * 43);
+    near(by["Foundry"].hours, 2000 * 43 / 3600);
+    near(by["Circuit Integration Facility"].hours, 2000 * 28 / 3600);
+    near(by["Module Assembly Plant"].hours, 100 * 28 / 3600);
+    near(by["Space Capsule Complex"].hours, 10 * 28 / 3600);
+    assert.equal(core.critical, "Foundry");
+    // sequential: stage maxes 23.888 + 0.777 + 0.0777
+    near(core.hoursSequential, (2000 * 43 + 100 * 28 + 10 * 28) / 3600);
+    // pipelined: critical + 10 min per downstream stage (2 stages)
+    near(core.hoursPipelined, 2000 * 43 / 3600 + 2 * 10 / 60);
+    // inputs of the Foundry row
+    const gold = by["Foundry"].inputs.find(i => i.name === "gold");
+    assert.deepEqual(gold, { name: "gold", kind: "currency", perUnit: 10000, needed: 20000000, stock: 0, short: 20000000, coverage: 0 });
+    assert.equal(core.ready, false);
+    assert.equal(core.binding.coverage, 0);
+  });
+
+  test("raw coverage, binding and unitsSupported", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const stocks = { gold: 40e6, silver: 40e6, copper: 40e6, platinum: 5e6 };
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], stocks, { freeSlots: 10 });
+    const plat = core.raw.find(r => r.name === "platinum");
+    near(plat.coverage, 0.25);
+    assert.equal(plat.unitsSupported, 2);
+    assert.equal(core.binding.name, "platinum");
+    const gold = core.raw.find(r => r.name === "gold");
+    near(gold.coverage, 2);
+    assert.equal(gold.unitsSupported, 20);
+  });
+
+  test("ready when every raw input is covered; coverage is 1 when nothing is needed", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const stocks = { "unstable fuel": 100, "fuel cell casing": 100 };
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], stocks, { freeSlots: 10 });
+    assert.equal(core.ready, true);
+    assert.equal(core.binding, null);
+    assert.equal(core.raw.length, 0);
+    const foundry = core.buildings.find(b => b.name === "Foundry");
+    assert.equal(foundry.unitsToRun, 0);
+    assert.equal(foundry.hours, 0);
+    near(core.hoursPipelined, 10 * 28 / 3600);
+  });
+
+  test("stage waves when a stage has more buildings than free slots", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {}, { freeSlots: 4 });
+    // stage 1 has 7 buildings on 4 slots -> 2 waves of the longest (Foundry 23.89 h)
+    near(core.hoursSequential, (2 * 2000 * 43 + 100 * 28 + 10 * 28) / 3600);
+  });
+
+  test("levelOverrides and speed change only the named building", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const up = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {}, { freeSlots: 10, levelOverrides: { Foundry: 21 } });
+    near(up.buildings.find(b => b.name === "Foundry").timerNow, 42.9);
+    const fast = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {}, { freeSlots: 10, speed: { building: "Foundry", x: 2 } });
+    near(fast.buildings.find(b => b.name === "Foundry").hours, 2000 * 43 / 2 / 3600);
+    const gold = fast.buildings.find(b => b.name === "Foundry").inputs.find(i => i.name === "gold");
+    near(gold.needed, 20000000 * 2.6);
+    near(fast.raw.find(r => r.name === "gold").needed, 20000000 * 2.6);
+    // an untouched building keeps its numbers
+    near(fast.buildings.find(b => b.name === "Refinery").hours, 2000 * 43 / 3600);
+  });
+
+  test("degraded: empty chain -> empty core, no throw", () => {
+    const chain = LabMath.buildChain([]);
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {}, { freeSlots: 10 });
+    assert.deepEqual(core.buildings, []);
+    assert.equal(core.ready, false);
+    assert.equal(core.hoursPipelined, 0);
+    assert.equal(core.critical, null);
+  });
+});
