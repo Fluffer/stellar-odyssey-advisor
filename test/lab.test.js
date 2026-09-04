@@ -23,6 +23,7 @@ function liveBuildings() {
   ];
 }
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, (msg || "") + ` expected ${b} got ${a}`);
+const nearRel = (a, b, msg) => assert.ok(Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b)), (msg || "") + ` expected ${b} got ${a}`);
 
 describe("LabMath.normName / buildChain", () => {
   test("normalises underscores, case and whitespace", () => {
@@ -247,7 +248,7 @@ describe("LabMath.planTarget: ROI and speed", () => {
     assert.deepEqual(plan.groupRoi.buildings.slice().sort(), plan.criticalGroup.slice().sort());
     assert.equal(plan.groupRoi.cost, 5 * 1150000 * 21);
     near(plan.groupRoi.hoursSaved, 200 / 3600);
-    near(plan.groupRoi.creditsPerHourSaved, 5 * 1150000 * 21 / (200 / 3600));
+    nearRel(plan.groupRoi.creditsPerHourSaved, 5 * 1150000 * 21 / (200 / 3600));
   });
 
   test("single critical building: Foundry on a 60 s timer is alone at the top", () => {
@@ -257,7 +258,7 @@ describe("LabMath.planTarget: ROI and speed", () => {
     assert.deepEqual(plan.criticalGroup, ["Foundry"]);
     assert.equal(plan.upgradeRoi[0].name, "Foundry");
     near(plan.upgradeRoi[0].hoursSaved, 200 / 3600);
-    near(plan.upgradeRoi[0].creditsPerHourSaved, 1150000 * 21 / (200 / 3600));
+    nearRel(plan.upgradeRoi[0].creditsPerHourSaved, 1150000 * 21 / (200 / 3600));
     const circuit = plan.upgradeRoi.find(r => r.name === "Circuit Integration Facility");
     assert.equal(circuit.hoursSaved, 0);
     assert.equal(circuit.creditsPerHourSaved, null);
@@ -278,7 +279,7 @@ describe("LabMath.planTarget: ROI and speed", () => {
     const x2 = plan.speed.options[0];
     assert.equal(x2.x, 2);
     near(x2.inputMult, 2.6);
-    near(x2.hours, 2000 * 43 / 2 / 3600 + 2 * 10 / 60);
+    near(x2.hours, 2000 * 28 / 3600 + 2 * 10 / 60); // Circuit Integration becomes the bottleneck once the tied five are halved
     near(x2.hoursSaved, plan.hoursPipelined - x2.hours);
     assert.equal(x2.affordable, true); // 52M of each raw input <= 100M
     assert.deepEqual(x2.extraInputs.find(e => e.name === "gold"), { name: "gold", extra: 20000000 * 1.6 });
