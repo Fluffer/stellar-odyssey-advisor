@@ -617,7 +617,12 @@ git commit -m "feat(lab): per-building timing, stage estimates, raw coverage"
   - `planTarget(chain, demands, stocks, opts): TargetPlan` = `Core` plus
     ```
     upgradeRoi: [{ name, level, nextLevelCost, hoursSaved, creditsPerHourSaved, levelsToFloor, costToFloor }]  // sorted by creditsPerHourSaved asc, nulls last
-    speed: { building, options: [{ x, inputMult, hours, hoursSaved, affordable, extraInputs: [{ name, extra }] }] } | null
+    criticalGroup: string[]   // every building within 1e-9 h of the maximum hours (empty when nothing runs)
+    groupRoi: { buildings: string[], cost, hoursSaved, creditsPerHourSaved } | null   // all group members +1 level together
+    speed: { buildings: string[], options: [{ x, inputMult, hours, hoursSaved, affordable, extraInputs: [{ name, extra }] }] } | null
+    ```
+  - `planCore` now accepts `opts.speed = { buildings: string[], x }` (the old `{ building, x }` form is still accepted as a one-element list).
+    ```
     ```
 
 - [ ] **Step 1: Write the failing tests** (append to `test/lab.test.js`)
@@ -626,47 +631,82 @@ git commit -m "feat(lab): per-building timing, stage estimates, raw coverage"
 describe("LabMath.planTarget: ROI and speed", () => {
   const chain = () => LabMath.buildChain(liveBuildings());
   const demands = [{ product: "warp capsule", units: 10 }];
+  // Every raw input generously stocked (100M), so speed affordability is
+  // decided by the multiplier alone.
+  const richStocks = () => Object.fromEntries(["gold", "silver", "copper", "platinum", "diamond", "ruby", "emerald",
+    "sapphire", "water", "nitrogen", "sulfur", "carbon", "helium", "methane", "ammonia", "hydrogen",
+    "silicon", "cobalt", "argon", "dark matter"].map(n => [n, 100e6]));
 
-  test("ROI: critical Foundry first, cost 1.15M*21, hours saved = 200 s", () => {
+  test("ties: five stage-1 buildings share the maximum, so a single +1 level saves nothing", () => {
     const plan = LabMath.planTarget(chain(), demands, {}, { freeSlots: 10 });
+    assert.deepEqual(plan.criticalGroup.slice().sort(), ["Crystal Synthesis Lab", "Foundry", "Nanotech Complex", "Noble Gas Processing Station", "Refinery"]);
+    const foundry = plan.upgradeRoi.find(r => r.name === "Foundry");
+    assert.equal(foundry.level, 20);
+    assert.equal(foundry.nextLevelCost, 1150000 * 21);
+    assert.equal(foundry.hoursSaved, 0);
+    assert.equal(foundry.creditsPerHourSaved, null);
+    assert.equal(foundry.levelsToFloor, 380);
+    assert.equal(foundry.costToFloor, LabMath.costToFloor(20, 380));
+    // the group row carries the real answer: all five +1 together
+    assert.deepEqual(plan.groupRoi.buildings.slice().sort(), plan.criticalGroup.slice().sort());
+    assert.equal(plan.groupRoi.cost, 5 * 1150000 * 21);
+    near(plan.groupRoi.hoursSaved, 200 / 3600);
+    near(plan.groupRoi.creditsPerHourSaved, 5 * 1150000 * 21 / (200 / 3600));
+  });
+
+  test("single critical building: Foundry on a 60 s timer is alone at the top", () => {
+    const buildings = liveBuildings();
+    buildings[0].timer = 60; // Foundry: 2000 x 58 s
+    const plan = LabMath.planTarget(LabMath.buildChain(buildings), demands, {}, { freeSlots: 10 });
+    assert.deepEqual(plan.criticalGroup, ["Foundry"]);
     assert.equal(plan.upgradeRoi[0].name, "Foundry");
-    assert.equal(plan.upgradeRoi[0].level, 20);
-    assert.equal(plan.upgradeRoi[0].nextLevelCost, 1150000 * 21);
     near(plan.upgradeRoi[0].hoursSaved, 200 / 3600);
     near(plan.upgradeRoi[0].creditsPerHourSaved, 1150000 * 21 / (200 / 3600));
-    assert.equal(plan.upgradeRoi[0].levelsToFloor, 380);
-    assert.equal(plan.upgradeRoi[0].costToFloor, LabMath.costToFloor(20, 380));
-    // a non-critical building saves nothing on the pipelined estimate
     const circuit = plan.upgradeRoi.find(r => r.name === "Circuit Integration Facility");
     assert.equal(circuit.hoursSaved, 0);
     assert.equal(circuit.creditsPerHourSaved, null);
+    assert.deepEqual(plan.groupRoi.buildings, ["Foundry"]);
+    near(plan.groupRoi.hoursSaved, plan.upgradeRoi[0].hoursSaved);
   });
 
   test("ROI: buildings with nothing to run have no row", () => {
     const plan = LabMath.planTarget(chain(), demands, { ingots: 5000 }, { freeSlots: 10 });
     assert.ok(!plan.upgradeRoi.some(r => r.name === "Foundry"));
+    assert.ok(!plan.criticalGroup.includes("Foundry"));
   });
 
-  test("speed options for the critical building: x10 = /10 time, x77.7 inputs", () => {
-    const stocks = { gold: 100e6, silver: 100e6, copper: 100e6, platinum: 100e6 };
-    const plan = LabMath.planTarget(chain(), demands, stocks, { freeSlots: 10 });
-    assert.equal(plan.speed.building, "Foundry");
+  test("speed options apply to the whole critical group: x2 halves the tied stage, x10 is unaffordable", () => {
+    const plan = LabMath.planTarget(chain(), demands, richStocks(), { freeSlots: 10 });
+    assert.equal(plan.speed.buildings.length, 5);
     assert.equal(plan.speed.options.length, 9);
     const x2 = plan.speed.options[0];
     assert.equal(x2.x, 2);
     near(x2.inputMult, 2.6);
     near(x2.hours, 2000 * 43 / 2 / 3600 + 2 * 10 / 60);
     near(x2.hoursSaved, plan.hoursPipelined - x2.hours);
-    assert.equal(x2.affordable, true); // 52M of each <= 100M
+    assert.equal(x2.affordable, true); // 52M of each raw input <= 100M
     assert.deepEqual(x2.extraInputs.find(e => e.name === "gold"), { name: "gold", extra: 20000000 * 1.6 });
+    assert.deepEqual(x2.extraInputs.find(e => e.name === "diamond"), { name: "diamond", extra: 20000000 * 1.6 });
+    assert.ok(!x2.extraInputs.some(e => e.name === "silicon"), "non-group inputs are not listed");
     const x10 = plan.speed.options[8];
     near(x10.inputMult, 77.7);
     assert.equal(x10.affordable, false); // 1.554B > 100M
   });
 
-  test("speed is null when nothing needs to run", () => {
+  test("planCore accepts speed for several buildings and still the old single-building form", () => {
+    const multi = LabMath.planCore(chain(), demands, {}, { freeSlots: 10, speed: { buildings: ["Foundry", "Refinery"], x: 2 } });
+    near(multi.buildings.find(b => b.name === "Foundry").hours, 2000 * 43 / 2 / 3600);
+    near(multi.buildings.find(b => b.name === "Refinery").hours, 2000 * 43 / 2 / 3600);
+    near(multi.buildings.find(b => b.name === "Crystal Synthesis Lab").hours, 2000 * 43 / 3600);
+    const single = LabMath.planCore(chain(), demands, {}, { freeSlots: 10, speed: { building: "Foundry", x: 2 } });
+    near(single.buildings.find(b => b.name === "Foundry").hours, 2000 * 43 / 2 / 3600);
+  });
+
+  test("speed and groupRoi are null when nothing needs to run", () => {
     const plan = LabMath.planTarget(chain(), demands, { "warp capsule": 10 }, { freeSlots: 10 });
     assert.equal(plan.speed, null);
+    assert.equal(plan.groupRoi, null);
+    assert.deepEqual(plan.criticalGroup, []);
     assert.deepEqual(plan.upgradeRoi, []);
     assert.equal(plan.ready, true);
   });
@@ -682,25 +722,38 @@ Expected: FAIL with `LabMath.planTarget is not a function`.
 
 ```js
 // Full target plan: core + upgrade ROI (per building, +1 level, full
-// recompute) + speed options for the critical building (full recompute so a
+// recompute) + the critical GROUP (every building tied at the maximum
+// hours: upgrading one of them alone saves nothing, so the group row is
+// the honest answer) + speed options for the group (full recompute so a
 // shifted bottleneck is reflected).
+const TIE_EPS = 1e-9;
 function planTarget(chain, demands, stocks, opts) {
   opts = opts || {};
   const base = planCore(chain, demands, stocks, opts);
+  const running = base.buildings.filter(b => b.unitsToRun > 0);
+  const maxHours = running.reduce((m, b) => Math.max(m, b.hours), 0);
+  const criticalGroup = base.critical ? running.filter(b => b.hours >= maxHours - TIE_EPS).map(b => b.name) : [];
 
-  const upgradeRoi = base.buildings
-    .filter(b => b.unitsToRun > 0)
+  const overridesPlus = (names) => {
+    const o = { ...(opts.levelOverrides || {}) };
+    for (const n of names) {
+      const b = base.buildings.find(x => x.name === n);
+      o[n] = (b ? b.level : 0) + 1;
+    }
+    return o;
+  };
+
+  const upgradeRoi = running
     .map(b => {
       const src = chain.list.find(x => x.name === b.name);
-      const up = planCore(chain, demands, stocks, {
-        ...opts, levelOverrides: { ...(opts.levelOverrides || {}), [b.name]: b.level + 1 },
-      });
+      const up = planCore(chain, demands, stocks, { ...opts, levelOverrides: overridesPlus([b.name]) });
       const hoursSaved = Math.max(0, base.hoursPipelined - up.hoursPipelined);
       const nextLevelCost = levelCost(b.level + 1);
       const ltf = levelsToFloor(src ? src.timer : 0, b.level);
       return {
-        name: b.name, level: b.level, nextLevelCost, hoursSaved,
-        creditsPerHourSaved: hoursSaved > 1e-9 ? nextLevelCost / hoursSaved : null,
+        name: b.name, level: b.level, nextLevelCost,
+        hoursSaved: hoursSaved < TIE_EPS ? 0 : hoursSaved,
+        creditsPerHourSaved: hoursSaved > TIE_EPS ? nextLevelCost / hoursSaved : null,
         levelsToFloor: ltf, costToFloor: costToFloor(b.level, ltf),
       };
     })
@@ -711,30 +764,63 @@ function planTarget(chain, demands, stocks, opts) {
       return a.creditsPerHourSaved - b.creditsPerHourSaved;
     });
 
+  let groupRoi = null;
+  if (criticalGroup.length) {
+    const up = planCore(chain, demands, stocks, { ...opts, levelOverrides: overridesPlus(criticalGroup) });
+    const cost = criticalGroup.reduce((s, n) => s + levelCost(base.buildings.find(x => x.name === n).level + 1), 0);
+    const hoursSaved = Math.max(0, base.hoursPipelined - up.hoursPipelined);
+    groupRoi = {
+      buildings: criticalGroup, cost,
+      hoursSaved: hoursSaved < TIE_EPS ? 0 : hoursSaved,
+      creditsPerHourSaved: hoursSaved > TIE_EPS ? cost / hoursSaved : null,
+    };
+  }
+
   let speed = null;
-  if (base.critical) {
-    const crit = base.buildings.find(b => b.name === base.critical);
+  if (criticalGroup.length) {
     const options = [];
     for (let x = 2; x <= 10; x++) {
-      const fast = planCore(chain, demands, stocks, { ...opts, speed: { building: base.critical, x } });
-      const fastCrit = fast.buildings.find(b => b.name === base.critical);
-      const extraInputs = fastCrit.inputs.map(inp => {
-        const before = crit.inputs.find(i => i.name === inp.name);
-        return { name: inp.name, extra: inp.needed - (before ? before.needed : 0) };
-      });
+      const fast = planCore(chain, demands, stocks, { ...opts, speed: { buildings: criticalGroup, x } });
+      const extra = {};
+      let affordable = true;
+      for (const name of criticalGroup) {
+        const before = base.buildings.find(b => b.name === name);
+        const after = fast.buildings.find(b => b.name === name);
+        for (const inp of after.inputs) {
+          const was = before.inputs.find(i => i.name === inp.name);
+          extra[inp.name] = (extra[inp.name] || 0) + inp.needed - (was ? was.needed : 0);
+          if (inp.coverage < 1) affordable = false;
+        }
+      }
       options.push({
         x, inputMult: SPEED_INPUT_MULT[x - 1], hours: fast.hoursPipelined,
         hoursSaved: Math.max(0, base.hoursPipelined - fast.hoursPipelined),
-        affordable: fastCrit.inputs.every(inp => inp.coverage >= 1),
-        extraInputs,
+        affordable,
+        extraInputs: Object.entries(extra).map(([name, e]) => ({ name, extra: e })),
       });
     }
-    speed = { building: base.critical, options };
+    speed = { buildings: criticalGroup, options };
   }
 
-  return { ...base, upgradeRoi, speed };
+  return { ...base, upgradeRoi, criticalGroup, groupRoi, speed };
 }
 ```
+
+Also change `planCore` so `opts.speed` accepts a LIST of buildings (keep the single-building form working):
+
+```js
+  const speedList = speed ? (Array.isArray(speed.buildings) ? speed.buildings : (speed.building ? [speed.building] : [])) : [];
+  const speedX = speed ? Math.min(10, Math.max(1, speed.x)) : 1;
+  const chainUsed = speedList.length ? {
+    list: chain.list.map(b => speedList.includes(b.name)
+      ? { ...b, input: b.input * SPEED_INPUT_MULT[speedX - 1] }
+      : b),
+    byProduct: {},
+  } : chain;
+  if (speedList.length) for (const b of chainUsed.list) if (!chainUsed.byProduct[b.product]) chainUsed.byProduct[b.product] = b;
+```
+
+and in the per-building loop replace the `div` line with `const div = speedList.includes(b.name) ? speedX : 1;`.
 
 Add `planTarget` to the `LabMath` export object.
 
@@ -1054,14 +1140,14 @@ function renderLab(lab) {
     html += card('Resources', '<span style="color:var(--good)">all covered</span>');
   }
   html += card('Queue slots', lab.freeSlots + ' free / ' + lab.queueSlots);
-  html += card('Critical building', plan.critical ? '<span class="crit">' + esc(plan.critical) + '</span>' : '-');
+  html += card('Critical building' + (plan.criticalGroup.length > 1 ? 's (tied)' : ''), plan.criticalGroup.length ? '<span class="crit">' + plan.criticalGroup.map(esc).join(', ') + '</span>' : '-');
   html += '</div>';
 
   // --- per building ---
   const rows = plan.buildings.filter(b => b.unitsToRun > 0);
   html += '<h2>Per building</h2><div class="sub">buildings with nothing to run are hidden; a building runs one queue, so its time is serial</div>';
   html += tableHtml('tbl-lab-buildings', rows, [
-    { label: 'Building', numeric: false, getValue: r => r.name, render: r => (r.name === plan.critical ? '<span class="crit">' : '<b>') + esc(r.name) + (r.name === plan.critical ? ' &#9650;</span>' : '</b>') },
+    { label: 'Building', numeric: false, getValue: r => r.name, render: r => (plan.criticalGroup.includes(r.name) ? '<span class="crit">' : '<b>') + esc(r.name) + (plan.criticalGroup.includes(r.name) ? ' &#9650;</span>' : '</b>') },
     { label: 'Stage', numeric: true, getValue: r => r.stage, render: r => String(r.stage) },
     { label: 'Units', numeric: true, getValue: r => r.unitsToRun, render: r => String(r.unitsToRun) },
     { label: 'Timer', numeric: true, getValue: r => r.timerNow, render: r => r.timerNow.toFixed(1) + ' s (lvl ' + r.level + ')' },
@@ -1082,11 +1168,20 @@ function renderLab(lab) {
   ]);
 
   // --- upgrade ROI ---
-  html += '<h2>Upgrade ROI</h2><div class="sub">credits per hour saved on the pipelined chain time, +1 level each</div><div class="list">';
+  html += '<h2>Upgrade ROI</h2><div class="sub">credits per hour saved on the pipelined chain time, +1 level each. Buildings tied at the top must be upgraded together: one alone saves nothing.</div><div class="list">';
+  let roiIndex = 0;
+  if (plan.groupRoi && plan.groupRoi.buildings.length > 1) {
+    roiIndex++;
+    html += '<div class="row"><span class="num">' + roiIndex + '</span><span><b>' + plan.groupRoi.buildings.map(esc).join(' + ') + '</b> (tied at the top) +1 level each: ' +
+      fmtC(plan.groupRoi.cost) + (plan.groupRoi.creditsPerHourSaved !== null
+        ? ' saves ' + fmtHours(plan.groupRoi.hoursSaved) + ' &mdash; <b>' + fmtC(plan.groupRoi.creditsPerHourSaved) + '</b> per hour saved'
+        : ' saves nothing (next stage bounds the chain)') + '</span></div>';
+  }
   const roi = plan.upgradeRoi.filter(r => r.creditsPerHourSaved !== null).slice(0, 5);
-  if (!roi.length) html += '<div class="row"><span>No level upgrade shortens the chain (nothing on the critical path to speed up).</span></div>';
-  roi.forEach((r, i) => {
-    html += '<div class="row"><span class="num">' + (i + 1) + '</span><span><b>' + esc(r.name) + '</b> lvl ' + r.level + ' &rarr; ' + (r.level + 1) +
+  if (!roi.length && !(plan.groupRoi && plan.groupRoi.creditsPerHourSaved !== null)) html += '<div class="row"><span>No level upgrade shortens the chain (nothing on the critical path to speed up).</span></div>';
+  roi.forEach((r) => {
+    roiIndex++;
+    html += '<div class="row"><span class="num">' + roiIndex + '</span><span><b>' + esc(r.name) + '</b> lvl ' + r.level + ' &rarr; ' + (r.level + 1) +
       ': ' + fmtC(r.nextLevelCost) + ' saves ' + fmtHours(r.hoursSaved) + ' &mdash; <b>' + fmtC(r.creditsPerHourSaved) + '</b> per hour saved' +
       (r.levelsToFloor ? '<span class="dimtext"> &middot; ' + r.levelsToFloor + ' levels to the 5 s floor (' + fmtC(r.costToFloor) + ')</span>' : '<span class="dimtext"> &middot; at the floor</span>') +
       '</span></div>';
@@ -1098,10 +1193,10 @@ function renderLab(lab) {
     const best = plan.speed.options.filter(o => o.affordable && o.hoursSaved > 0).sort((a, b) => b.hoursSaved - a.hoursSaved)[0];
     html += '<h2>Speed multiplier</h2><div class="list">';
     if (best) {
-      html += '<div class="row"><span><b>' + esc(plan.speed.building) + '</b> at <b>x' + best.x + '</b>: chain ' + fmtHours(best.hours) + ' (saves ' + fmtHours(best.hoursSaved) + '), inputs &times;' + best.inputMult +
+      html += '<div class="row"><span><b>' + plan.speed.buildings.map(esc).join(' + ') + '</b> at <b>x' + best.x + '</b>' + (plan.speed.buildings.length > 1 ? ' (all of them, they are tied)' : '') + ': chain ' + fmtHours(best.hours) + ' (saves ' + fmtHours(best.hoursSaved) + '), inputs &times;' + best.inputMult +
         ' &mdash; extra ' + best.extraInputs.map(e => esc(e.name) + ' ' + fmtC(e.extra)).join(', ') + '. Costs resources, not credits; compare with the level upgrades above by hours saved.</span></div>';
     } else {
-      html += '<div class="row"><span>No speed multiplier on <b>' + esc(plan.speed.building) + '</b> is affordable from stock.</span></div>';
+      html += '<div class="row"><span>No speed multiplier on <b>' + plan.speed.buildings.map(esc).join(' + ') + '</b> is affordable from stock.</span></div>';
     }
     html += '</div>';
   }

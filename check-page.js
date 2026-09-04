@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "pet-math.js"]) {
+for (const f of ["app.js", "pet-math.js", "lab-math.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -36,9 +36,17 @@ try {
   fail("pet-math.js does not load: " + e.message);
 }
 
+try {
+  const lm = require(path.join(PUBLIC_DIR, "lab-math.js"));
+  if (typeof lm.planTarget !== "function") throw new Error("planTarget missing");
+  console.log("  ok: lab-math.js loads as a module");
+} catch (e) {
+  fail("lab-math.js does not load: " + e.message);
+}
+
 // 3. index.html must reference the stylesheet and both scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
-for (const ref of ["/style.css", "/pet-math.js", "/app.js"]) {
+for (const ref of ["/style.css", "/pet-math.js", "/lab-math.js", "/app.js"]) {
   if (html.includes(ref)) console.log("  ok: index.html references " + ref);
   else fail("index.html does not reference " + ref);
 }

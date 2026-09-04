@@ -54,6 +54,14 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   and charges you own (plus the unweighted per-craft cost), checked against your current
   material stock. Split into NPC drop materials (with which NPC and location to farm),
   laboratory-produced materials, and everything else, with deficits called out
+- **Lab** — bottleneck planner for the Laboratory chain: set a warp-capsule target and
+  see, from the live buildings and your stock, which raw resource binds (coverage bars),
+  how many units each building must run and for how long, the chain time both pipelined
+  (claim and re-queue every 10 minutes) and sequential, which building level buys the
+  most time per credit (1.15M × level, 0.1 s per level down to the 5 s floor), the best
+  affordable speed multiplier, and base-founding readiness (5,000 each of the five
+  intermediates) with the capsule chain time after founding; the target counts capsules
+  on top of what you already hold
 - **Item advisor** (Gear tab) — per-slot ship item analysis: how many levels behind the
   matching skill (battling/gathering/exploring) each item's craft-time level is and what
   recrafting now would cap its value at, weapon/shield NPC-weakness mod coverage, an engine
@@ -133,11 +141,13 @@ recent snapshot immediately (marked as stale) until you analyze fresh.
 | `advisor-server.js` | Web GUI server (port 8787), serves `public/` |
 | `advisor-core.js` | Analysis pipeline facade (see `lib/`) |
 | `lib/` | Engine modules (constants, value math, CDP reader, install/merge planners, battle rating, units/tech/pets/materials/ship-items advisors) |
+| `lib/lab.js` | Lab planner adapter (game state → shared chain math) |
 | `advisor-battle.js` | Battle simulator (ported from the game's battle code) |
 | `public/index.html` | GUI page skeleton |
 | `public/style.css` | GUI styles |
 | `public/app.js` | GUI client-side rendering and the pet simulator |
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
+| `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
 | `check-page.js` | GUI file sanity checker |
 
 ## Tests

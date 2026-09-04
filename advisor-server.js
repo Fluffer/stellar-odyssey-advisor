@@ -33,6 +33,7 @@ const STATIC = {
   "/style.css": ["style.css", "text/css"],
   "/app.js": ["app.js", "application/javascript"],
   "/pet-math.js": ["pet-math.js", "application/javascript"],
+  "/lab-math.js": ["lab-math.js", "application/javascript"],
 };
 
 function serveStatic(res, url) {

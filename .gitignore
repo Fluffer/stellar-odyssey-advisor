@@ -3,3 +3,6 @@ snapshots/
 
 # server logs and one-off output dumps
 *.log
+
+# subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

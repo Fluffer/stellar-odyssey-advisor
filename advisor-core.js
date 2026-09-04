@@ -28,6 +28,7 @@ const { planTech } = require("./lib/tech.js");
 const { planPets } = require("./lib/pets.js");
 const { planMaterials, NPC_MATERIAL_SOURCES } = require("./lib/materials.js");
 const { planShipItems } = require("./lib/ship-items.js");
+const { planLab } = require("./lib/lab.js");
 const PetMath = require("./public/pet-math.js");
 const {
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
@@ -311,6 +312,7 @@ function analyze(s) {
   const pets = planPets(s);
   const materials = planMaterials(s);
   const shipItems = planShipItems(s);
+  const lab = planLab(s, {});
 
   // Full per-activity stat breakdown for the Stats tab. Chain semantics:
   // totals[ctx] already holds exactly what is active during that activity.
@@ -324,7 +326,7 @@ function analyze(s) {
     installs, installsResources, freedTexts,
     mergePlans, mergeRequirements, battleNote, battleBase,
     projection, inventory,
-    units, tech, pets, materials, shipItems,
+    units, tech, pets, materials, shipItems, lab,
   };
 }
 
@@ -379,6 +381,6 @@ module.exports = {
   BATTLING_NPCS, unitStepCost, cumulativeUnitCost, unitPrice, planUnits, planTech,
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
   petHoursToNextLevel, planPets, planInventory, planMaterials, NPC_MATERIAL_SOURCES,
-  planShipItems,
+  planShipItems, planLab,
   CDP, evalInPage, READ_ALL, discoverGameWsUrl, fetchJson, readGameState, analyze,
 };

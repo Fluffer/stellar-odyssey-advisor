@@ -126,6 +126,12 @@
   .tbl th:hover { color: var(--text); }
   .tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
   .tbl td.num, .tbl th.num { text-align: right; }
+/* lab planner */
+.covbar { display: inline-block; width: 90px; height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.covbar-fill { display: block; height: 100%; border-radius: 3px; }
+.crit { color: var(--warn); font-weight: 700; }
+.lab-input { width: 90px; }
+
 /* per-activity stat panel (Stats tab) */
 .ctxgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
 .card input[type=number] { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
