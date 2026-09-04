@@ -227,47 +227,82 @@ describe("LabMath timing", () => {
 describe("LabMath.planTarget: ROI and speed", () => {
   const chain = () => LabMath.buildChain(liveBuildings());
   const demands = [{ product: "warp capsule", units: 10 }];
+  // Every raw input generously stocked (100M), so speed affordability is
+  // decided by the multiplier alone.
+  const richStocks = () => Object.fromEntries(["gold", "silver", "copper", "platinum", "diamond", "ruby", "emerald",
+    "sapphire", "water", "nitrogen", "sulfur", "carbon", "helium", "methane", "ammonia", "hydrogen",
+    "silicon", "cobalt", "argon", "dark matter"].map(n => [n, 100e6]));
 
-  test("ROI: critical Foundry first, cost 1.15M*21, hours saved = 200 s", () => {
+  test("ties: five stage-1 buildings share the maximum, so a single +1 level saves nothing", () => {
     const plan = LabMath.planTarget(chain(), demands, {}, { freeSlots: 10 });
+    assert.deepEqual(plan.criticalGroup.slice().sort(), ["Crystal Synthesis Lab", "Foundry", "Nanotech Complex", "Noble Gas Processing Station", "Refinery"]);
+    const foundry = plan.upgradeRoi.find(r => r.name === "Foundry");
+    assert.equal(foundry.level, 20);
+    assert.equal(foundry.nextLevelCost, 1150000 * 21);
+    assert.equal(foundry.hoursSaved, 0);
+    assert.equal(foundry.creditsPerHourSaved, null);
+    assert.equal(foundry.levelsToFloor, 380);
+    assert.equal(foundry.costToFloor, LabMath.costToFloor(20, 380));
+    // the group row carries the real answer: all five +1 together
+    assert.deepEqual(plan.groupRoi.buildings.slice().sort(), plan.criticalGroup.slice().sort());
+    assert.equal(plan.groupRoi.cost, 5 * 1150000 * 21);
+    near(plan.groupRoi.hoursSaved, 200 / 3600);
+    near(plan.groupRoi.creditsPerHourSaved, 5 * 1150000 * 21 / (200 / 3600));
+  });
+
+  test("single critical building: Foundry on a 60 s timer is alone at the top", () => {
+    const buildings = liveBuildings();
+    buildings[0].timer = 60; // Foundry: 2000 x 58 s
+    const plan = LabMath.planTarget(LabMath.buildChain(buildings), demands, {}, { freeSlots: 10 });
+    assert.deepEqual(plan.criticalGroup, ["Foundry"]);
     assert.equal(plan.upgradeRoi[0].name, "Foundry");
-    assert.equal(plan.upgradeRoi[0].level, 20);
-    assert.equal(plan.upgradeRoi[0].nextLevelCost, 1150000 * 21);
     near(plan.upgradeRoi[0].hoursSaved, 200 / 3600);
     near(plan.upgradeRoi[0].creditsPerHourSaved, 1150000 * 21 / (200 / 3600));
-    assert.equal(plan.upgradeRoi[0].levelsToFloor, 380);
-    assert.equal(plan.upgradeRoi[0].costToFloor, LabMath.costToFloor(20, 380));
-    // a non-critical building saves nothing on the pipelined estimate
     const circuit = plan.upgradeRoi.find(r => r.name === "Circuit Integration Facility");
     assert.equal(circuit.hoursSaved, 0);
     assert.equal(circuit.creditsPerHourSaved, null);
+    assert.deepEqual(plan.groupRoi.buildings, ["Foundry"]);
+    near(plan.groupRoi.hoursSaved, plan.upgradeRoi[0].hoursSaved);
   });
 
   test("ROI: buildings with nothing to run have no row", () => {
     const plan = LabMath.planTarget(chain(), demands, { ingots: 5000 }, { freeSlots: 10 });
     assert.ok(!plan.upgradeRoi.some(r => r.name === "Foundry"));
+    assert.ok(!plan.criticalGroup.includes("Foundry"));
   });
 
-  test("speed options for the critical building: x10 = /10 time, x77.7 inputs", () => {
-    const stocks = { gold: 100e6, silver: 100e6, copper: 100e6, platinum: 100e6 };
-    const plan = LabMath.planTarget(chain(), demands, stocks, { freeSlots: 10 });
-    assert.equal(plan.speed.building, "Foundry");
+  test("speed options apply to the whole critical group: x2 halves the tied stage, x10 is unaffordable", () => {
+    const plan = LabMath.planTarget(chain(), demands, richStocks(), { freeSlots: 10 });
+    assert.equal(plan.speed.buildings.length, 5);
     assert.equal(plan.speed.options.length, 9);
     const x2 = plan.speed.options[0];
     assert.equal(x2.x, 2);
     near(x2.inputMult, 2.6);
     near(x2.hours, 2000 * 43 / 2 / 3600 + 2 * 10 / 60);
     near(x2.hoursSaved, plan.hoursPipelined - x2.hours);
-    assert.equal(x2.affordable, true); // 52M of each <= 100M
+    assert.equal(x2.affordable, true); // 52M of each raw input <= 100M
     assert.deepEqual(x2.extraInputs.find(e => e.name === "gold"), { name: "gold", extra: 20000000 * 1.6 });
+    assert.deepEqual(x2.extraInputs.find(e => e.name === "diamond"), { name: "diamond", extra: 20000000 * 1.6 });
+    assert.ok(!x2.extraInputs.some(e => e.name === "silicon"), "non-group inputs are not listed");
     const x10 = plan.speed.options[8];
     near(x10.inputMult, 77.7);
     assert.equal(x10.affordable, false); // 1.554B > 100M
   });
 
-  test("speed is null when nothing needs to run", () => {
+  test("planCore accepts speed for several buildings and still the old single-building form", () => {
+    const multi = LabMath.planCore(chain(), demands, {}, { freeSlots: 10, speed: { buildings: ["Foundry", "Refinery"], x: 2 } });
+    near(multi.buildings.find(b => b.name === "Foundry").hours, 2000 * 43 / 2 / 3600);
+    near(multi.buildings.find(b => b.name === "Refinery").hours, 2000 * 43 / 2 / 3600);
+    near(multi.buildings.find(b => b.name === "Crystal Synthesis Lab").hours, 2000 * 43 / 3600);
+    const single = LabMath.planCore(chain(), demands, {}, { freeSlots: 10, speed: { building: "Foundry", x: 2 } });
+    near(single.buildings.find(b => b.name === "Foundry").hours, 2000 * 43 / 2 / 3600);
+  });
+
+  test("speed and groupRoi are null when nothing needs to run", () => {
     const plan = LabMath.planTarget(chain(), demands, { "warp capsule": 10 }, { freeSlots: 10 });
     assert.equal(plan.speed, null);
+    assert.equal(plan.groupRoi, null);
+    assert.deepEqual(plan.criticalGroup, []);
     assert.deepEqual(plan.upgradeRoi, []);
     assert.equal(plan.ready, true);
   });

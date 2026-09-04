@@ -107,15 +107,17 @@ function planCore(chain, demands, stocks, opts) {
   const stockOf = {};
   for (const [k, v] of Object.entries(stocks || {})) stockOf[normName(k)] = Number(v) || 0;
 
-  // Speed multiplies the inputs of ONE building: fold it into the expansion
-  // by scaling that building's `input` before expanding.
-  const chainUsed = speed ? {
-    list: chain.list.map(b => b.name === speed.building
-      ? { ...b, input: b.input * SPEED_INPUT_MULT[Math.min(10, Math.max(1, speed.x)) - 1] }
+  // Speed multiplies the inputs of specified buildings: fold it into the expansion
+  // by scaling those buildings' `input` before expanding.
+  const speedList = speed ? (Array.isArray(speed.buildings) ? speed.buildings : (speed.building ? [speed.building] : [])) : [];
+  const speedX = speed ? Math.min(10, Math.max(1, speed.x)) : 1;
+  const chainUsed = speedList.length ? {
+    list: chain.list.map(b => speedList.includes(b.name)
+      ? { ...b, input: b.input * SPEED_INPUT_MULT[speedX - 1] }
       : b),
     byProduct: {},
   } : chain;
-  if (speed) for (const b of chainUsed.list) chainUsed.byProduct[b.product] = b;
+  if (speedList.length) for (const b of chainUsed.list) if (!chainUsed.byProduct[b.product]) chainUsed.byProduct[b.product] = b;
 
   const ex = expand(chainUsed, demands, stockOf);
 
@@ -123,7 +125,7 @@ function planCore(chain, demands, stocks, opts) {
     const level = overrides[b.name] !== undefined ? overrides[b.name] : b.level;
     const unitsToRun = ex.runs[b.name] || 0;
     const timerNow = timerAt(b.timer, level);
-    const div = speed && speed.building === b.name ? Math.min(10, Math.max(1, speed.x)) : 1;
+    const div = speedList.includes(b.name) ? speedX : 1;
     const seconds = unitsToRun * timerNow / div;
     const inputs = b.inputs.map(inp => {
       const needed = unitsToRun * b.input;
@@ -178,27 +180,38 @@ function planCore(chain, demands, stocks, opts) {
 }
 
 // Full target plan: core + upgrade ROI (per building, +1 level, full
-// recompute) + speed options for the critical building (full recompute so a
+// recompute) + the critical GROUP (every building tied at the maximum
+// hours: upgrading one of them alone saves nothing, so the group row is
+// the honest answer) + speed options for the group (full recompute so a
 // shifted bottleneck is reflected).
+const TIE_EPS = 1e-9;
 function planTarget(chain, demands, stocks, opts) {
   opts = opts || {};
   const base = planCore(chain, demands, stocks, opts);
+  const running = base.buildings.filter(b => b.unitsToRun > 0);
+  const maxHours = running.reduce((m, b) => Math.max(m, b.hours), 0);
+  const criticalGroup = base.critical ? running.filter(b => b.hours >= maxHours - TIE_EPS).map(b => b.name) : [];
 
-  const upgradeRoi = base.buildings
-    .filter(b => b.unitsToRun > 0)
+  const overridesPlus = (names) => {
+    const o = { ...(opts.levelOverrides || {}) };
+    for (const n of names) {
+      const b = base.buildings.find(x => x.name === n);
+      o[n] = (b ? b.level : 0) + 1;
+    }
+    return o;
+  };
+
+  const upgradeRoi = running
     .map(b => {
       const src = chain.list.find(x => x.name === b.name);
-      const up = planCore(chain, demands, stocks, {
-        ...opts, levelOverrides: { ...(opts.levelOverrides || {}), [b.name]: b.level + 1 },
-      });
-      const upBuilding = up.buildings.find(x => x.name === b.name);
-      const secondsSaved = b.name === base.critical ? Math.max(0, b.seconds - upBuilding.seconds) : 0;
-      const hoursSaved = secondsSaved / 3600;
+      const up = planCore(chain, demands, stocks, { ...opts, levelOverrides: overridesPlus([b.name]) });
+      const hoursSaved = Math.max(0, base.hoursPipelined - up.hoursPipelined);
       const nextLevelCost = levelCost(b.level + 1);
       const ltf = levelsToFloor(src ? src.timer : 0, b.level);
       return {
-        name: b.name, level: b.level, nextLevelCost, hoursSaved,
-        creditsPerHourSaved: hoursSaved > 1e-9 ? nextLevelCost / hoursSaved : null,
+        name: b.name, level: b.level, nextLevelCost,
+        hoursSaved: hoursSaved < TIE_EPS ? 0 : hoursSaved,
+        creditsPerHourSaved: hoursSaved > TIE_EPS ? nextLevelCost / hoursSaved : null,
         levelsToFloor: ltf, costToFloor: costToFloor(b.level, ltf),
       };
     })
@@ -209,30 +222,45 @@ function planTarget(chain, demands, stocks, opts) {
       return a.creditsPerHourSaved - b.creditsPerHourSaved;
     });
 
-  let speed = null;
-  if (base.critical) {
-    const crit = base.buildings.find(b => b.name === base.critical);
-    const options = [];
-    for (let x = 2; x <= 10; x++) {
-      const fast = planCore(chain, demands, stocks, { ...opts, speed: { building: base.critical, x } });
-      const fastCrit = fast.buildings.find(b => b.name === base.critical);
-      const extraInputs = fastCrit.inputs.map(inp => {
-        const before = crit.inputs.find(i => i.name === inp.name);
-        return { name: inp.name, extra: inp.needed - (before ? before.needed : 0) };
-      });
-      const timeSavedOnCrit = Math.max(0, crit.hours - fastCrit.hours);
-      const adjustedPipelinedTime = base.hoursPipelined - timeSavedOnCrit;
-      options.push({
-        x, inputMult: SPEED_INPUT_MULT[x - 1], hours: adjustedPipelinedTime,
-        hoursSaved: timeSavedOnCrit,
-        affordable: fastCrit.inputs.every(inp => inp.coverage >= 1),
-        extraInputs,
-      });
-    }
-    speed = { building: base.critical, options };
+  let groupRoi = null;
+  if (criticalGroup.length) {
+    const up = planCore(chain, demands, stocks, { ...opts, levelOverrides: overridesPlus(criticalGroup) });
+    const cost = criticalGroup.reduce((s, n) => s + levelCost(base.buildings.find(x => x.name === n).level + 1), 0);
+    const hoursSaved = Math.max(0, base.hoursPipelined - up.hoursPipelined);
+    groupRoi = {
+      buildings: criticalGroup, cost,
+      hoursSaved: hoursSaved < TIE_EPS ? 0 : hoursSaved,
+      creditsPerHourSaved: hoursSaved > TIE_EPS ? cost / hoursSaved : null,
+    };
   }
 
-  return { ...base, upgradeRoi, speed };
+  let speed = null;
+  if (criticalGroup.length) {
+    const options = [];
+    for (let x = 2; x <= 10; x++) {
+      const fast = planCore(chain, demands, stocks, { ...opts, speed: { buildings: criticalGroup, x } });
+      const extra = {};
+      let affordable = true;
+      for (const name of criticalGroup) {
+        const before = base.buildings.find(b => b.name === name);
+        const after = fast.buildings.find(b => b.name === name);
+        for (const inp of after.inputs) {
+          const was = before.inputs.find(i => i.name === inp.name);
+          extra[inp.name] = (extra[inp.name] || 0) + inp.needed - (was ? was.needed : 0);
+          if (inp.coverage < 1) affordable = false;
+        }
+      }
+      options.push({
+        x, inputMult: SPEED_INPUT_MULT[x - 1], hours: fast.hoursPipelined,
+        hoursSaved: Math.max(0, base.hoursPipelined - fast.hoursPipelined),
+        affordable,
+        extraInputs: Object.entries(extra).map(([name, e]) => ({ name, extra: e })),
+      });
+    }
+    speed = { buildings: criticalGroup, options };
+  }
+
+  return { ...base, upgradeRoi, criticalGroup, groupRoi, speed };
 }
 
 const LabMath = {
