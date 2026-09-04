@@ -136,12 +136,168 @@ function stellariumPerDay(starRate, boost) {
   return ESTIMATES.minerAmount(starRate, boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
 }
 
+// Lab math is needed for material production times. In Node it is a
+// sibling module; in the browser it is the LabMath global loaded first.
+const LM = (typeof module !== "undefined" && module.exports) ? require("./lab-math.js") : (typeof window !== "undefined" ? window.LabMath : null);
+
+function defaultModules() {
+  return MODULES.map(m => ({ ...m, unlocked: false, level: 0, tier: 0, active: false, _id: null }));
+}
+
+// Live BaseBuildingStore.base -> engine shape. Unknown module names are
+// dropped, missing table modules are added locked, missing fields default.
+function normalizeBase(raw) {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.modules)) return null;
+  const byName = {};
+  for (const m of raw.modules) if (m && typeof m === "object" && m.name) byName[m.name] = m;
+  const modules = MODULES.map(t => {
+    const m = byName[t.name] || {};
+    return {
+      ...t,
+      unlocked: !!m.unlocked,
+      level: Number(m.level) || 0,
+      tier: Number(m.tier) || 0,
+      active: m.active === undefined ? !!m.unlocked : !!m.active,
+      _id: m._id || null,
+    };
+  });
+  return {
+    name: raw.name || "",
+    stellarium: Number(raw.stellarium) || 0,
+    nextStellariumTick: Number(raw.nextStellariumTick) || 0,
+    upkeepReduction: Number(raw.catalystUpkeepReduction) || 0,
+    modules,
+  };
+}
+
+// Unlock plan in topological order. The Stellarium miner comes with
+// founding (cost 0). Each further unlock costs unlockCost(N) with N = modules
+// unlocked before it. ETA divides the cumulative stellarium still to pay by
+// the ESTIMATED daily miner income.
+function planUnlocks(modules, starRate, minerBoost) {
+  const order = unlockOrder();
+  const byName = {};
+  for (const m of modules || []) byName[m.name] = m;
+  const perDay = stellariumPerDay(starRate, minerBoost);
+  let unlockedCount = (modules || []).filter(m => m.unlocked).length;
+  let cumulative = 0;
+  return order.map(name => {
+    const m = byName[name] || { unlocked: false };
+    if (m.unlocked) return { name, unlocked: true, cost: 0, cumulative, daysToUnlock: 0, estimate: true };
+    const cost = (name === "Stellarium miner" && unlockedCount === 0) ? 0 : unlockCost(unlockedCount);
+    unlockedCount++;
+    cumulative += cost;
+    return { name, unlocked: false, cost, cumulative, daysToUnlock: perDay > 0 ? cumulative / perDay : Infinity, estimate: true };
+  });
+}
+
+// Materials to take each target module from its current level to toLevel:
+// f(to) - f(from), charged from EACH of the module's materials.
+function materialsFor(targets, modules) {
+  const byName = {};
+  for (const m of modules || []) byName[m.name] = m;
+  const perModule = [];
+  const perMaterial = {};
+  for (const t of targets || []) {
+    const m = byName[t.name];
+    if (!m) continue;
+    const from = Math.max(0, Math.floor(m.level || 0));
+    const to = Math.max(from, Math.floor(Number(t.toLevel) || 0));
+    const each = levelsCost(from, to);
+    perModule.push({ name: m.name, from, to, perMaterial: each, materials: m.materials.slice() });
+    for (const mat of m.materials) {
+      const row = perMaterial[mat] || (perMaterial[mat] = { needed: 0, modules: [] });
+      row.needed += each;
+      row.modules.push(m.name);
+    }
+  }
+  return { perModule, perMaterial };
+}
+
+function planBase(input) {
+  input = input || {};
+  const modules = Array.isArray(input.modules) && input.modules.length ? input.modules : defaultModules();
+  const byName = {};
+  for (const m of modules) byName[m.name] = m;
+  const eff = Number(input.efficiencyBoost) || 0;
+  const miner = byName["Stellarium miner"];
+  const minerBoost = miner && miner.unlocked ? moduleBoost(miner, eff) : 0;
+  const starRate = Number(input.starRate) || 0;
+
+  const unlocks = planUnlocks(modules, starRate, minerBoost);
+  const last = unlocks[unlocks.length - 1];
+  const totalStellariumLeft = last ? last.cumulative : 0;
+  const perDay = stellariumPerDay(starRate, minerBoost);
+
+  // Targets: every module with a level box; default 50.
+  const levels = input.levels || {};
+  const targetList = modules.map(m => ({ name: m.name, toLevel: levels[m.name] !== undefined ? levels[m.name] : 50 }));
+  const mats = materialsFor(targetList, modules);
+  const targets = mats.perModule.map(pm => {
+    const m = byName[pm.name];
+    const at = { ...m, level: pm.to };
+    const boostAtTarget = moduleBoost(at, eff);
+    return {
+      name: m.name, type: m.type, from: pm.from, to: pm.to, materials: pm.materials, perMaterial: pm.perMaterial,
+      boostAtTarget, outputAtTarget: expectedOutputPerTick(at, eff),
+      upkeepPerHourAtTarget: 0, // filled below once passiveCount is known
+    };
+  });
+
+  // Upkeep at the targets: passive modules among the targets (pre) or the
+  // unlocked passive ones (live).
+  const passiveNames = targets.filter(t => t.type === "passive" && (!input.founded || byName[t.name].unlocked)).map(t => t.name);
+  const passiveCount = passiveNames.length;
+  let perTick = 0;
+  for (const t of targets) {
+    if (!passiveNames.includes(t.name)) continue;
+    const tick = upkeepPerTick(input.avgDaily, passiveCount, t.boostAtTarget, input.pvpBaseBoost, input.upkeepReduction);
+    t.upkeepPerHourAtTarget = tick * 6;
+    perTick += tick;
+  }
+  const coverage = questsCoverage(input.questsClaimed);
+  const perDayUpkeep = perTick * TICKS_PER_DAY;
+  const upkeep = {
+    passiveCount, perTick, perHour: perTick * 6, perDay: perDayUpkeep, coverage,
+    netPerDay: perDayUpkeep * (1 - coverage),
+    shareOfIncome: input.avgDaily > 0 ? perDayUpkeep / input.avgDaily : null,
+  };
+
+  // Stockpile: per material totals vs stock; production time via the lab
+  // chain for materials whose building is present in chainBuildings.
+  const stocks = input.stocks || {};
+  const stockOf = name => (LM ? (stocks[LM.normName(name)] || 0) : (stocks[name] || 0));
+  const chain = LM ? LM.buildChain(input.chainBuildings || []) : { list: [], byProduct: {} };
+  const stockpile = Object.entries(mats.perMaterial).map(([material, row]) => {
+    const info = MATERIAL_BUILDINGS[material] || { building: null, inputs: [], baseTier: false };
+    const bought = !!chain.byProduct[LM ? LM.normName(material) : material];
+    const stock = stockOf(material);
+    const short = Math.max(0, row.needed - stock);
+    let hoursPipelined = null, binding = null;
+    if (bought && short > 0 && LM) {
+      const core = LM.planCore(chain, [{ product: material, units: short }], stocks, { freeSlots: input.freeSlots || 1, netTopLevel: false });
+      hoursPipelined = core.hoursPipelined;
+      binding = core.binding;
+    }
+    return { material, needed: row.needed, stock, short, modules: row.modules, building: info.building, baseTier: info.baseTier, inputs: info.inputs.slice(), bought, hoursPipelined, binding };
+  }).sort((a, b) => b.short - a.short);
+  const buyFirst = stockpile.filter(s => !s.bought && s.baseTier && s.needed > 0).map(s => s.building)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+
+  return {
+    unlocks, totalStellariumLeft, stellariumPerDay: perDay,
+    daysToAllUnlocks: perDay > 0 ? totalStellariumLeft / perDay : Infinity,
+    targets, stockpile, buyFirst, upkeep,
+  };
+}
+
 const BaseMath = {
   PROVENANCE, MODULES, MATERIAL_BUILDINGS, STAR_BONUSES, BODY_BONUSES, FOUNDING_BUNDLE, ESTIMATES, TICKS_PER_DAY, UPKEEP_CAP,
   levelCostCumulative, levelCost, levelsCost,
   stellariumStep, unlockCost, tierCost, tiersCost,
   moduleBoost, expectedOutputPerTick, unlockOrder,
   avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay,
+  defaultModules, normalizeBase, planUnlocks, materialsFor, planBase,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = BaseMath;
 if (typeof window !== "undefined") window.BaseMath = BaseMath;

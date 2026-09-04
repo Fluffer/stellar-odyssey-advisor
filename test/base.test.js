@@ -118,3 +118,161 @@ describe("BaseMath boost, output, upkeep, income", () => {
     assert.equal(BM.ESTIMATES.STELLARIUM_TICK_HOURS, 5);
   });
 });
+
+describe("BaseMath.normalizeBase / defaultModules", () => {
+  test("null, non-object and shapeless input -> null", () => {
+    assert.equal(BM.normalizeBase(null), null);
+    assert.equal(BM.normalizeBase("x"), null);
+    assert.equal(BM.normalizeBase({}), null);
+    assert.equal(BM.normalizeBase({ modules: "nope" }), null);
+  });
+  test("live-shaped base is normalised with table defaults for missing fields", () => {
+    const raw = {
+      _id: "b1", name: "Home", stellarium: 12, nextStellariumTick: 1788600000, catalystUpkeepReduction: 5,
+      modules: [
+        { _id: "m1", name: "Stellarium miner", type: "passive", unlocked: true, level: 20, tier: 2, needs: [], tickCounter: 3, active: true },
+        { _id: "m2", name: "Material generator", unlocked: false },
+        { _id: "mx", name: "Unknown thing", unlocked: true, level: 5 },
+      ],
+    };
+    const b = BM.normalizeBase(raw);
+    assert.equal(b.name, "Home");
+    assert.equal(b.stellarium, 12);
+    assert.equal(b.modules.length, 11, "every table module present, unknown names dropped");
+    const miner = b.modules.find(m => m.name === "Stellarium miner");
+    assert.equal(miner.level, 20); assert.equal(miner.tier, 2); assert.equal(miner.unlocked, true); assert.equal(miner.active, true);
+    const gen = b.modules.find(m => m.name === "Material generator");
+    assert.equal(gen.level, 0); assert.equal(gen.type, "passive"); assert.deepEqual(gen.materials, ["aerolite"]);
+    assert.equal(b.modules.find(m => m.name === "Quantum server").unlocked, false);
+  });
+  test("defaultModules: all locked at level 0", () => {
+    const d = BM.defaultModules();
+    assert.equal(d.length, 11);
+    assert.ok(d.every(m => !m.unlocked && m.level === 0 && m.tier === 0));
+  });
+});
+
+describe("BaseMath.planUnlocks", () => {
+  test("pre-founding: miner comes with founding, ten unlocks cost 220 total, ETA from the estimate", () => {
+    const u = BM.planUnlocks(BM.defaultModules(), 6, 0);
+    assert.equal(u.length, 11);
+    assert.equal(u[0].name, "Stellarium miner"); assert.equal(u[0].cost, 0);
+    assert.equal(u[1].cost, 1); assert.equal(u[1].cumulative, 1);
+    assert.equal(u[10].cost, 55); assert.equal(u[10].cumulative, 220);
+    near(u[10].daysToUnlock, 220 / 28.8);
+    assert.equal(u[10].estimate, true);
+  });
+  test("live: unlocked modules cost nothing more and cumulative counts only what is left", () => {
+    const mods = BM.defaultModules();
+    mods.find(m => m.name === "Stellarium miner").unlocked = true;
+    mods.find(m => m.name === "Material generator").unlocked = true;
+    const u = BM.planUnlocks(mods, 8, 20);
+    const next = u.find(x => !x.unlocked);
+    assert.equal(next.cost, 3, "two unlocked -> next costs 1+2");
+    assert.equal(u[u.length - 1].cumulative, 219);
+    near(u[u.length - 1].daysToUnlock, 219 / BM.stellariumPerDay(8, 20));
+  });
+});
+
+describe("BaseMath.materialsFor", () => {
+  test("charges f(to)-f(from) from EACH material and groups per material", () => {
+    const mods = BM.defaultModules();
+    mods.find(m => m.name === "Stellarium miner").level = 20;
+    const r = BM.materialsFor([{ name: "Stellarium miner", toLevel: 50 }, { name: "Quantum server", toLevel: 10 }], mods);
+    const miner = r.perModule.find(m => m.name === "Stellarium miner");
+    assert.equal(miner.perMaterial, BM.levelsCost(20, 50));           // 1275 - 210 = 1065
+    assert.equal(r.perMaterial.microcircuits.needed, 1065 + 55);
+    assert.equal(r.perMaterial["fusion cells"].needed, 1065);
+    assert.deepEqual(r.perMaterial.microcircuits.modules, ["Stellarium miner", "Quantum server"]);
+  });
+});
+
+describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
+  const warpBuildings = () => {
+    const b = (building, currency_use, material_use, produce, input, timer) =>
+      ({ building, level: 20, currency_use, material_use, produce, input, output: 1, timer });
+    return [
+      b("Foundry", ["gold", "silver", "copper", "platinum"], [], ["ingots"], 10000, 45),
+      b("Refinery", ["diamond", "ruby", "emerald", "sapphire"], [], ["refined_crystals"], 10000, 45),
+      b("Crystal Synthesis Lab", ["water", "nitrogen", "sulfur", "carbon"], [], ["high_end_crystals"], 10000, 45),
+      b("Noble Gas Processing Station", ["helium", "methane"], [], ["propulsors"], 10000, 45),
+      b("Nanotech Complex", ["ammonia", "hydrogen"], [], ["nanoconductors"], 10000, 45),
+      b("Circuit Integration Facility", ["silicon", "cobalt"], [], ["microcircuits"], 1000, 30),
+      b("Energetic Fusion Center", ["argon", "dark matter"], [], ["fusion cells"], 1000, 30),
+      b("Module Assembly Plant", [], ["ingots", "refined crystals", "microcircuits"], ["fuel cell casing"], 20, 30),
+      b("Fuel Lab", [], ["high end crystals", "propulsors", "nanoconductors", "fusion cells"], ["unstable fuel"], 20, 30),
+      b("Space Capsule Complex", [], ["unstable fuel", "fuel cell casing"], ["warp capsule"], 10, 30),
+    ];
+  };
+  const input = () => ({
+    modules: BM.defaultModules(), founded: false, stellarium: 0,
+    levels: Object.fromEntries(BM.MODULES.map(m => [m.name, 50])),
+    starRate: 6, starName: "A type",
+    stocks: { microcircuits: 1600, "fusion cells": 1600, "warp capsule": 15, silicon: 1.28e6, cobalt: 22.9e6, argon: 0.64e6, "dark matter": 0.74e6 },
+    chainBuildings: warpBuildings(), freeSlots: 10,
+    avgDaily: 200e6, efficiencyBoost: 0, upkeepReduction: 0, pvpBaseBoost: 0, questsClaimed: 5,
+  });
+
+  test("stockpile: totals per material, shortfalls, chain time for bought buildings, buy-first for base-tier ones", () => {
+    const plan = BM.planBase(input());
+    const micro = plan.stockpile.find(s => s.material === "microcircuits");
+    // miner 1275 + quantum server 1275 + lab enhancer 1275 (half-level only affects boost, not cost)
+    assert.equal(micro.needed, 3 * 1275);
+    assert.equal(micro.stock, 1600);
+    assert.equal(micro.short, 3 * 1275 - 1600);
+    assert.equal(micro.building, "Circuit Integration Facility");
+    assert.equal(micro.bought, true);
+    assert.ok(micro.hoursPipelined > 0);
+    assert.equal(micro.binding.name, "silicon", "2225 more microcircuits need 2.225M silicon vs 1.28M in stock");
+    const fusion = plan.stockpile.find(s => s.material === "fusion cells");
+    assert.equal(fusion.needed, 3 * 1275); // miner, fuel facility, item booster
+    assert.equal(fusion.binding.name, "argon", "2225 x 1000 argon > 640k");
+    const aero = plan.stockpile.find(s => s.material === "aerolite");
+    assert.equal(aero.needed, 1275); assert.equal(aero.bought, false); assert.equal(aero.hoursPipelined, null);
+    assert.deepEqual(aero.inputs, ["gold", "ruby", "sulfur", "hydrogen"]);
+    assert.deepEqual(plan.buyFirst, ["Aeroforge", "Cryovault", "Ferric Mill", "Prism Nexus"]);
+    const caps = plan.stockpile.find(s => s.material === "warp capsule");
+    assert.equal(caps.needed, 2 * 1275); assert.equal(caps.short, 2 * 1275 - 15);
+  });
+
+  test("upkeep at targets: 9 passive modules at level 50 (boost 50, half-level ones 25)", () => {
+    const plan = BM.planBase(input());
+    assert.equal(plan.upkeep.passiveCount, 9);
+    // 7 passive modules at boost 50 + Quantum server and Laboratory enhancer at boost 25
+    const expectedTick = 7 * BM.upkeepPerTick(200e6, 9, 50, 0, 0) + 2 * BM.upkeepPerTick(200e6, 9, 25, 0, 0);
+    near(plan.upkeep.perTick, expectedTick);
+    near(plan.upkeep.perDay, expectedTick * 144);
+    near(plan.upkeep.coverage, 0.75);
+    near(plan.upkeep.netPerDay, plan.upkeep.perDay * 0.25);
+    near(plan.upkeep.shareOfIncome, plan.upkeep.perDay / 200e6);
+  });
+
+  test("unlocks and targets", () => {
+    const plan = BM.planBase(input());
+    assert.equal(plan.totalStellariumLeft, 220);
+    near(plan.stellariumPerDay, 28.8);
+    near(plan.daysToAllUnlocks, 220 / 28.8);
+    const qs = plan.targets.find(t => t.name === "Quantum server");
+    assert.equal(qs.from, 0); assert.equal(qs.to, 50); assert.equal(qs.perMaterial, 1275);
+    near(qs.boostAtTarget, 25); near(qs.outputAtTarget, 1.25);
+    const craft = plan.targets.find(t => t.name === "Craftron 3000");
+    assert.equal(craft.upkeepPerHourAtTarget, 0, "active modules pay no upkeep");
+  });
+
+  test("levels below the current level or missing -> zero cost, no negative", () => {
+    const inp = input();
+    inp.modules.find(m => m.name === "Stellarium miner").level = 80;
+    inp.levels = { "Stellarium miner": 50 };
+    const plan = BM.planBase(inp);
+    const miner = plan.targets.find(t => t.name === "Stellarium miner");
+    assert.equal(miner.perMaterial, 0);
+    assert.ok(plan.stockpile.every(s => s.needed >= 0));
+  });
+
+  test("degraded: no chain buildings -> no times, no throw; empty stocks fine", () => {
+    const inp = input(); inp.chainBuildings = []; inp.stocks = {};
+    const plan = BM.planBase(inp);
+    assert.ok(plan.stockpile.every(s => s.hoursPipelined === null));
+    assert.ok(plan.stockpile.find(s => s.material === "microcircuits").bought === false);
+  });
+});
