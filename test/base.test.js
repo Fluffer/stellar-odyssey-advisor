@@ -275,6 +275,30 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     assert.ok(plan.stockpile.every(s => s.hoursPipelined === null));
     assert.ok(plan.stockpile.find(s => s.material === "microcircuits").bought === false);
   });
+
+  test("upkeepNow: null pre-founding", () => {
+    const plan = BM.planBase(input());
+    assert.equal(plan.upkeepNow, null);
+  });
+
+  test("upkeepNow: live, at CURRENT levels of unlocked passive modules only", () => {
+    const inp = input();
+    inp.founded = true;
+    const miner = inp.modules.find(m => m.name === "Stellarium miner");
+    miner.unlocked = true; miner.level = 20; miner.tier = 2;
+    const plan = BM.planBase(inp);
+    assert.equal(plan.upkeepNow.passiveCount, 1);
+    const expectedTick = BM.upkeepPerTick(200e6, 1, BM.moduleBoost({ ...miner, level: 20, tier: 2 }, 0), 0, 0);
+    near(plan.upkeepNow.perTick, expectedTick);
+    assert.notEqual(plan.upkeepNow.perTick, plan.upkeep.perTick, "upkeepNow (current levels) differs from upkeep (target levels)");
+  });
+
+  test("buyFirst: only base-tier buildings that are actually short", () => {
+    const inp = input();
+    inp.stocks = Object.assign({}, inp.stocks, { aerolite: 5000 }); // target needs 1275, fully stocked
+    const plan = BM.planBase(inp);
+    assert.ok(!plan.buyFirst.includes("Aeroforge"));
+  });
 });
 
 describe("lib/base.js planBaseFromState", () => {
@@ -304,6 +328,7 @@ describe("lib/base.js planBaseFromState", () => {
     assert.equal(b.location.best.name, "Vak");
     assert.equal(b.location.best.rate, 8);
     assert.equal(b.location.chosen.star, "A type");
+    assert.equal(b.location.chosen.name, "Torvornir", "chosen star equals current star -> current system's name");
     assert.deepEqual(b.location.bodies.map(x => x.activity), ["exploring", "crafting"]);
     assert.equal(b.input.avgDaily, 200000000);
     assert.equal(b.plan.upkeep.passiveCount, 9);
@@ -319,7 +344,13 @@ describe("lib/base.js planBaseFromState", () => {
   test("opts.star chooses the ETA star; opts.levels override targets", () => {
     const b = planBaseFromState(liveState(), { star: "Black Hole", levels: { "Stellarium miner": 100 }, now: 1786174949 + 27 * 86400 });
     assert.equal(b.location.chosen.rate, 8);
+    assert.equal(b.location.chosen.name, "Vak", "not the current star -> first bookmark with that star");
     assert.equal(b.plan.targets.find(t => t.name === "Stellarium miner").to, 100);
+  });
+
+  test("chosen star matching neither the current star nor any bookmark has no name", () => {
+    const b = planBaseFromState(liveState(), { star: "O type", now: 1786174949 + 27 * 86400 });
+    assert.equal(b.location.chosen.name, null);
   });
 
   test("live phase from a bundle-shaped base", () => {
@@ -336,6 +367,14 @@ describe("lib/base.js planBaseFromState", () => {
     assert.equal(b.live.nextUnlock.cost, 1);
     assert.equal(b.live.nextUnlock.etaDays, 0, "2 stellarium held >= cost 1");
     assert.equal(b.plan.upkeep.passiveCount, 1, "live: only unlocked passive modules pay");
+  });
+
+  test("dailyQuests from state feeds questsClaimed and upkeep coverage", () => {
+    const s = liveState();
+    s.dailyQuests = { claimed: 3, completed: 4, total: 5 };
+    const b = planBaseFromState(s, { now: 1786174949 + 27 * 86400 });
+    assert.equal(b.input.questsClaimed, 3);
+    near(b.plan.upkeep.coverage, 0.45);
   });
 
   test("degraded: missing account, currentSystem, bookmarks, lab -> no throw", () => {

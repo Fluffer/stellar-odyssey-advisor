@@ -263,6 +263,17 @@ function planBase(input) {
     shareOfIncome: input.avgDaily > 0 ? perDayUpkeep / input.avgDaily : null,
   };
 
+  // Upkeep bill the player is paying right now, at current (not target)
+  // levels, using only the passive modules already unlocked live.
+  let upkeepNow = null;
+  if (input.founded) {
+    const passiveNow = modules.filter(m => m.type === "passive" && m.unlocked);
+    let tick = 0;
+    for (const m of passiveNow) tick += upkeepPerTick(input.avgDaily, passiveNow.length, moduleBoost(m, eff), input.pvpBaseBoost, input.upkeepReduction);
+    const day = tick * TICKS_PER_DAY;
+    upkeepNow = { passiveCount: passiveNow.length, perTick: tick, perHour: tick * 6, perDay: day, coverage, netPerDay: day * (1 - coverage), shareOfIncome: input.avgDaily > 0 ? day / input.avgDaily : null };
+  }
+
   // Stockpile: per material totals vs stock; production time via the lab
   // chain for materials whose building is present in chainBuildings.
   const stocks = input.stocks || {};
@@ -281,13 +292,13 @@ function planBase(input) {
     }
     return { material, needed: row.needed, stock, short, modules: row.modules, building: info.building, baseTier: info.baseTier, inputs: info.inputs.slice(), bought, hoursPipelined, binding };
   }).sort((a, b) => b.short - a.short);
-  const buyFirst = stockpile.filter(s => !s.bought && s.baseTier && s.needed > 0).map(s => s.building)
+  const buyFirst = stockpile.filter(s => !s.bought && s.baseTier && s.short > 0).map(s => s.building)
     .filter((v, i, arr) => arr.indexOf(v) === i);
 
   return {
     unlocks, totalStellariumLeft, stellariumPerDay: perDay,
     daysToAllUnlocks: perDay > 0 ? totalStellariumLeft / perDay : Infinity,
-    targets, stockpile, buyFirst, upkeep,
+    targets, stockpile, buyFirst, upkeep, upkeepNow,
   };
 }
 
