@@ -177,3 +177,69 @@ describe("statTotalsByContext (chain semantics)", () => {
     assert.equal(totals.voyager.fuel_efficiency, 5);
   });
 });
+
+describe("planInstalls replace bookkeeping", () => {
+  // Default group: 4 legendary/100 catalysts worth 40 each - no candidate
+  // below can beat any of them, so phase 1 never touches it.
+  const strongDefault = [
+    cat("dd", "defense", "legendary", 100, { activity: "default" }),
+    cat("da", "armor_penetration", "legendary", 100, { activity: "default" }),
+    cat("ds", "stun", "legendary", 100, { activity: "default" }),
+    cat("db", "block", "legendary", 100, { activity: "default" }),
+  ];
+  // Full galaxyboss group of uncommon ~98% catalysts (14.1 - 14.7 each).
+  const gbGroup = (defRange = 98) => [
+    cat("gb-block", "block", "uncommon", 94, { activity: "galaxyboss" }),           // 14.10
+    cat("gb-ap", "armor_penetration", "uncommon", 98, { activity: "galaxyboss" }),  // 14.70
+    cat("gb-def", "defense", "uncommon", defRange, { activity: "galaxyboss" }),     // 14.70 at 98
+    cat("gb-dot", "dot", "uncommon", 97, { activity: "galaxyboss" }),               // 14.55
+  ];
+
+  test("replacing the only same-stat catalyst does NOT mark the newcomer halved, and the plan never replaces a catalyst it just installed", () => {
+    const ship = {
+      weapon_slot: { name: "Test Weapon", level: 1, rarity: "legendary", catalysts: [...strongDefault, ...gbGroup()] },
+    };
+    const pool = [
+      cat("dot90", "dot", "rare", 90),     // 18.00 -> replaces gb-dot (14.55), gain 3.45
+      cat("stun85", "stun", "uncommon", 85), // 12.75 -> weaker than everything in the group after that
+    ];
+    const res = core.planInstalls(ship, pool, {});
+    const gb = res.actions.filter(a => a.activity === "galaxyboss");
+    assert.equal(gb.length, 1, "only the dot upgrade is worthwhile");
+    assert.equal(gb[0].add._id, "dot90");
+    assert.equal(gb[0].remove._id, "gb-dot");
+    assert.equal(gb[0].sameCount, 1, "gb-dot leaves the group, so dot90 is the only dot");
+    assert.ok(Math.abs(gb[0].gain - 3.45) < 0.001);
+    const addedIds = new Set(res.actions.map(a => a.add._id));
+    assert.ok(!res.actions.some(a => a.remove && addedIds.has(a.remove._id)), "no action removes a catalyst the plan itself installed");
+  });
+
+  test("replace keeps context totals honest so a capped stat is not filled twice", () => {
+    // Shield default: legendary defense 75 = 30, inherited into galaxyboss.
+    // Weapon galaxyboss defense (uncommon 60 = 9.00) -> galaxyboss defense
+    // total 39.00, cap 50. One legendary defense 100 (40) replacing gb-def
+    // (same stat!) brings the total to 70 (capped 50: real gain 11.00). A
+    // SECOND identical candidate can add nothing - it must not be suggested.
+    const ship = {
+      weapon_slot: { name: "Test Weapon", level: 1, rarity: "legendary", catalysts: [...strongDefault, ...gbGroup(60)] },
+      shield_slot: {
+        name: "Test Shield", level: 1, rarity: "legendary",
+        catalysts: [
+          cat("sd", "defense", "legendary", 75, { activity: "default" }), // 30
+          cat("sa", "armor_penetration", "legendary", 100, { activity: "default" }),
+          cat("ss", "stun", "legendary", 100, { activity: "default" }),
+          cat("sb", "block", "legendary", 100, { activity: "default" }),
+        ],
+      },
+    };
+    const pool = [
+      cat("bigdef1", "defense", "legendary", 100),
+      cat("bigdef2", "defense", "legendary", 100),
+    ];
+    const res = core.planInstalls(ship, pool, {});
+    const defActions = res.actions.filter(a => a.add.stat === "defense");
+    assert.equal(defActions.length, 1, "defense is capped after the first replacement");
+    assert.equal(defActions[0].remove._id, "gb-def");
+    assert.ok(Math.abs(defActions[0].gain - 11) < 0.001);
+  });
+});
