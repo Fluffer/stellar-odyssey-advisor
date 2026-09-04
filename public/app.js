@@ -467,6 +467,9 @@ function fmtC(n) {
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
   return String(Math.round(n));
 }
+// Exact integer, comma-grouped (no k/M/B abbreviation) for material counts
+// where the reader needs to compare against an in-game exact quantity.
+function fmtN(n) { return Math.round(Number(n) || 0).toLocaleString('en-US'); }
 const SKILL_LABELS = {
   efficiency: 'Efficiency', storage: 'Storage', maneuverability: 'Maneuverability',
   critical_chance: 'Critical chance', critical_damage: 'Critical damage', dual_shot: 'Dual shot'
@@ -1100,8 +1103,14 @@ function setBaseLevel(name, v) {
   try { localStorage.setItem('advisor-base-levels', JSON.stringify(levels)); } catch (e) {}
   if (window.lastData) render(window.lastData);
 }
-function baseStar(fallback) {
-  try { const v = localStorage.getItem('advisor-base-star'); if (v) return v; } catch (e) {}
+// validOptions, when given, restricts the stored star to one the selector
+// actually offers (current system + bookmarks) so the dropdown and the
+// rate always agree; a stale/unknown stored value falls back to `fallback`.
+function baseStar(fallback, validOptions) {
+  try {
+    const v = localStorage.getItem('advisor-base-star');
+    if (v && (!validOptions || validOptions.indexOf(v) !== -1)) return v;
+  } catch (e) {}
   return fallback;
 }
 function setBaseStar(v) {
@@ -1118,7 +1127,8 @@ function fmtDays(d) {
 function basePlanFor(b) {
   const BM = window.BaseMath;
   const levels = Object.assign({}, b.input.levels || {}, baseLevels());
-  const starName = baseStar(b.input.starName);
+  const starOptions = [b.location.current].concat(b.location.bookmarks).filter(s => s.star).map(s => s.star);
+  const starName = baseStar(b.input.starName, starOptions);
   const rate = (BM.STAR_BONUSES[starName] || { rate: b.input.starRate || 0 }).rate;
   const input = Object.assign({}, b.input, { levels, starName, starRate: rate });
   return { plan: BM.planBase(input), starName, rate, levels };
@@ -1150,8 +1160,13 @@ function renderBase(b) {
     '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est"> best known: ' + esc(b.location.best.star) + ' rate ' + b.location.best.rate + (b.location.best.name ? ' at ' + esc(b.location.best.name) : '') + '</span>' : ''));
   html += card('Stellarium / day', plan.stellariumPerDay.toFixed(1) + '<span class="est"> estimate &middot; all unlocks in ' + fmtDays(plan.daysToAllUnlocks) + ' (' + plan.totalStellariumLeft + ' left)</span>');
   const up = plan.upkeep;
+  if (b.live && plan.upkeepNow) {
+    const now = plan.upkeepNow;
+    html += card('Upkeep / day now', fmtC(now.perDay) + '<span class="est"> ' + (now.shareOfIncome !== null ? (now.shareOfIncome * 100).toFixed(0) + '% of avg daily income (' + fmtC(b.input.avgDaily) + ')' : 'income unknown') +
+      ' &middot; ' + now.passiveCount + ' passive modules unlocked &middot; dailies claimed today cover ' + (now.coverage * 100).toFixed(0) + '% &rarr; net ' + fmtC(now.netPerDay) + '</span>');
+  }
   html += card('Upkeep / day at targets', fmtC(up.perDay) + '<span class="est"> ' + (up.shareOfIncome !== null ? (up.shareOfIncome * 100).toFixed(0) + '% of avg daily income (' + fmtC(b.input.avgDaily) + ')' : 'income unknown') +
-    ' &middot; ' + up.passiveCount + ' passive modules &middot; 5 dailies cover 75% &rarr; net ' + fmtC(up.perDay * 0.25) + '</span>');
+    ' &middot; ' + up.passiveCount + ' passive modules &middot; dailies claimed today cover ' + (up.coverage * 100).toFixed(0) + '% &rarr; net ' + fmtC(up.netPerDay) + '</span>');
   html += '</div>';
   if (b.labPanelHint) html += '<div class="sub">Base-tier lab buildings (Aeroforge, Cryovault, Ferric Mill, Prism Nexus, Rare Material Facility) and their price only show up after you open the Laboratory panel in-game once.</div>';
   if (b.location.bodies.length) html += '<div class="sub">Body XP bonus (+10%, permanent) in the current system: ' + b.location.bodies.map(x => esc(x.type) + (x.activity ? ' &rarr; ' + esc(x.activity) : '')).join(', ') + '.</div>';
@@ -1182,19 +1197,21 @@ function renderBase(b) {
     { label: 'Unlock', numeric: true, getValue: r => r.cost, render: r => r.unlocked ? '-' : r.cost + '<span class="est"> (' + r.cumulative + ' cum. &middot; ' + fmtDays(r.daysToUnlock) + ')</span>' },
     { label: 'Materials', numeric: false, getValue: r => (r.materials || []).join(','), render: r => (r.materials || []).map(esc).join(', ') },
     { label: 'Target level', numeric: true, getValue: r => r.to || 0, render: r => '<input class="pet-input base-input" type="number" min="0" value="' + (r.to || 0) + '" onchange="setBaseLevel(' + esc(jsStr(r.name)) + ', this.value)">' + (r.from ? '<span class="est"> from ' + r.from + '</span>' : '') },
-    { label: 'Cost to target', numeric: true, getValue: r => r.perMaterial || 0, render: r => fmtC(r.perMaterial || 0) + ' of each' },
+    { label: 'Cost to target', numeric: true, getValue: r => r.perMaterial || 0, render: r => fmtN(r.perMaterial || 0) + ' of each' },
     { label: 'Boost at target', numeric: true, getValue: r => r.boostAtTarget || 0, render: r => (r.boostAtTarget || 0).toFixed(0) + '%' },
-    { label: 'Upkeep / h at target', numeric: true, getValue: r => r.upkeepPerHourAtTarget || 0, render: r => r.type === 'active' ? '-' : fmtC(r.upkeepPerHourAtTarget || 0) },
+    { label: 'Output / tick at target', numeric: true, getValue: r => r.outputAtTarget || 0, render: r => (r.outputAtTarget === undefined ? '-' : r.outputAtTarget.toFixed(2)) },
+    { label: 'Upkeep / h at target', numeric: true, getValue: r => r.upkeepPerHourAtTarget || 0, render: r => (r.type === 'active' || (b.live && !r.unlocked)) ? '-' : fmtC(r.upkeepPerHourAtTarget || 0) },
   ]);
 
   // --- stockpile ---
   html += '<h2>Stockpile for the targets</h2>';
+  html += '<div class="sub">chain times are per material and each assumes the full raw stock; shared raw resources (silicon, cobalt, argon&hellip;) are not split between rows</div>';
   if (plan.buyFirst.length) html += '<div class="sub" style="color:var(--warn)">Buy these base-tier lab buildings first: ' + plan.buyFirst.map(esc).join(', ') + '.</div>';
   html += tableHtml('tbl-base-stock', plan.stockpile, [
     { label: 'Material', numeric: false, getValue: r => r.material, render: r => '<b>' + esc(r.material) + '</b>' },
-    { label: 'Needed', numeric: true, getValue: r => r.needed, render: r => fmtC(r.needed) },
-    { label: 'Stock', numeric: true, getValue: r => r.stock, render: r => fmtC(r.stock) },
-    { label: 'Short', numeric: true, getValue: r => r.short, render: r => r.short > 0 ? '<span style="color:var(--bad)">' + fmtC(r.short) + '</span>' : '<span style="color:var(--good)">0</span>' },
+    { label: 'Needed', numeric: true, getValue: r => r.needed, render: r => fmtN(r.needed) },
+    { label: 'Stock', numeric: true, getValue: r => r.stock, render: r => fmtN(r.stock) },
+    { label: 'Short', numeric: true, getValue: r => r.short, render: r => r.short > 0 ? '<span style="color:var(--bad)">' + fmtN(r.short) + '</span>' : '<span style="color:var(--good)">0</span>' },
     { label: 'For', numeric: false, getValue: r => r.modules.length, render: r => r.modules.map(esc).join(', ') },
     { label: 'Produced by', numeric: false, getValue: r => r.building || '', render: r => r.bought ? esc(r.building || '') : '<span style="color:var(--warn)">buy ' + esc(r.building || '?') + ' first</span><span class="est"> &middot; consumes ' + r.inputs.map(esc).join(', ') + '</span>' },
     { label: 'Chain time', numeric: true, getValue: r => r.hoursPipelined === null ? -1 : r.hoursPipelined, render: r => r.hoursPipelined === null ? '-' : fmtHours(r.hoursPipelined) + (r.binding ? '<span style="color:var(--bad)"> binding ' + esc(r.binding.name) + ' ' + (r.binding.coverage * 100).toFixed(0) + '%</span>' : '') },

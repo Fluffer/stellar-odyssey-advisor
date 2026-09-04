@@ -99,6 +99,7 @@ account: { registered: UserStore.registered, lifetimeCredits: Number(UserStore.p
 currentSystem: { name, star: ExploreStore.currentSystem.star, bodies: [type] },
 bookmarks: ExploreStore.bookmarks.map(b => ({ name: b.system.name, star: b.system.star, bodies: b.system.bodies.map(x => x.type) })),
 gameVersion: GameStore.patchVersion,
+dailyQuests: { claimed, completed, total } from DailyQuestsStore.quests (null if the store is absent),
 ```
 
 Live base shape as the client reads it (field names grepped from the bundle):
@@ -111,8 +112,10 @@ that is not an object with a `modules` array; the tab then shows the pre-foundin
 A fixture built from this shape drives the live-phase tests.
 
 Formula provenance: bundle `assets/index-BiPcVSdi.js`, game patch 1.1.1 (`GameStore.patchVersion`).
-The tab footer shows "formulas from client 1.1.1"; if the live `gameVersion` differs, the
-footer turns amber ("re-check formulas").
+The tab footer shows "formulas from client 1.1.1"; it turns amber ("re-check formulas") when
+the loaded client bundle basename (`clientBundle`) differs from `PROVENANCE.bundle`.
+`gameVersion` is the server patch version; it is displayed but never used to decide drift,
+since it can change without a client (formula) update.
 
 `player.skills.base_module_efficiency_boost` and the equipped
 `base_upkeep_reduction` total (default context) are already available.
