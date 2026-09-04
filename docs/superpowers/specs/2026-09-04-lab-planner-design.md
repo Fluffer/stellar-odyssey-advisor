@@ -1,6 +1,6 @@
 # Lab / crafting bottleneck planner — design
 
-Date: 2026-09-04. Status: approved in chat, sub-project 1 of 3.
+Date: 2026-09-04. Status: approved in chat, critiqued by model-iq (deepseek, kimi), sub-project 1 of 3.
 
 ## Goal
 
@@ -24,8 +24,18 @@ Sub-projects (this spec covers only #1):
 - Speed multiplier x1..x10: same output in 1/x the time, input per unit
   multiplied by `[1, 2.6, 4.5, 7, 10.5, 15.4, 22.7, 33.8, 50.9, 77.7]`.
 - Queue slots: 4 standard, 6 premium, plus purchased extra slots
-  (`UserStore.additionalQueueSlots`). Adding units to a running queue needs no
-  slot.
+  (`UserStore.additionalQueueSlots`). The pool is global across lab, base and
+  dungeon buildings; a building holds ONE queue (one multiplier at a time), so
+  a building is strictly serial and never spans several slots. Adding units to
+  a running queue needs no slot.
+- Inputs are consumed when units are queued ("provided you have enough
+  resources"), not per unit or at claim.
+- Production keeps running while output sits unclaimed; Claim (10-minute
+  cooldown per queue) only banks what is ready. Claiming therefore gates when
+  downstream buildings can be fed, not throughput.
+- Level upgrades change the timer only (never input or output).
+- The speed multiplier is per queue, costs no credits, multiplies every input
+  of that queue and divides its time.
 - Chain (Warp Capsule buildings):
   - Foundry: gold, silver, copper, platinum → ingots
   - Refinery: diamond, ruby, emerald, sapphire → refined crystals
@@ -74,9 +84,10 @@ TargetPlan = {
                 inputs: [{ name, kind, perUnit, needed, stock, short, coverage }], critical }],
   raw:  [{ name, needed, stock, coverage, unitsSupported }],
   binding: { name, coverage } | null,
-  hours, stages: [{ stage, hours, critical }],
+  hoursSequential, hoursPipelined, freeSlots,
   upgradeRoi: [{ name, level, nextLevelCost, hoursSaved, creditsPerHourSaved, levelsToFloor, costToFloor }],
-  speed: { building, options: [{ x, inputMult, hours, affordable }] } | null,
+  speed: { building, options: [{ x, inputMult, hours, affordable, extraInputs }] } | null,
+  afterFounding: { hoursPipelined, binding } | null,   // capsule target only
   ready: boolean,
 }
 ```
@@ -90,41 +101,70 @@ Algorithm:
 2. Stage = longest path from the product down to raw inputs (capsule 3,
    casing/fuel 2, intermediates 1). Buildings with `unitsToRun = 0` are
    listed with zero time.
-3. Time per building = `unitsToRun × timer(level) / output`. Stage time =
-   buildings in the stage scheduled greedily onto `queueSlots` parallel
-   slots (longest-first); chain hours = sum of stage times. `critical` marks
-   the longest building per stage.
-4. `upgradeRoi`: for each building with `unitsToRun > 0`, recompute chain
-   hours with `level + 1`; `hoursSaved`, `creditsPerHourSaved =
-   nextLevelCost / hoursSaved` (null if 0). `levelsToFloor` and `costToFloor`
-   from the 0.1 s/level rule (`Σ 1.15M × k`).
-5. `speed` for the critical building of the longest stage: for x in 2..10,
-   hours with time / x and inputs × mult; `affordable` = every input still
-   covered by stock at that multiplier.
+3. Time per building = `unitsToRun × timer(level) / output` (serial: one
+   queue per building). Free slots = `queueSlots − labQueue.length`. Stage
+   time = max building hours in the stage when the stage has at most
+   `freeSlots` buildings, else `ceil(count / freeSlots)` waves as an upper
+   bound (no packing code). Two chain estimates are reported:
+   - `hoursSequential` = sum of stage times (queue each stage in full only
+     after the previous stage has finished).
+   - `hoursPipelined` = the critical building's hours + 10 minutes per stage
+     downstream of it (claim and re-queue every cooldown as inputs arrive).
+     This is the realistic lower bound because inputs are consumed at
+     queue time, so pipelining is a manual claim/queue loop.
+   `critical` = the building with the largest hours overall; per-stage
+   critical is derivable in the GUI.
+4. `upgradeRoi`: for each building with `unitsToRun > 0`, recompute
+   `hoursPipelined` with `level + 1` (full recompute; at most ~15 buildings,
+   cheap enough for the browser on every keystroke); `hoursSaved`,
+   `creditsPerHourSaved = nextLevelCost / hoursSaved` (null if 0).
+   `levelsToFloor` and `costToFloor` from the 0.1 s/level rule
+   (`Σ 1.15M × k`). Buildings not on the critical path show hoursSaved 0.
+5. `speed` for the critical building: for x in 2..10, recompute
+   `hoursPipelined` with that building's time / x and its inputs × mult
+   (recompute, so a shifted bottleneck is reflected); `affordable` = every
+   input of that building still covered by stock at that multiplier;
+   `extraInputs` lists the additional units of each input. The GUI shows the
+   best affordable x only. The multiplier costs resources, not credits, so it
+   is presented next to level upgrades in hours-saved terms, never merged into
+   one credits-per-hour ranking.
 6. `raw`: per raw currency `needed`, `stock`, `coverage = stock / needed`,
    `unitsSupported = floor(stock / needed × units)`. `binding` = lowest
    coverage < 1. `ready` = no shortfalls anywhere.
 7. Base founding target = a virtual product whose inputs are the five
-   intermediates × 5,000, expanded through the same code path.
+   intermediates × 5,000, expanded through the same code path. The two
+   targets are computed independently over the same stock; the GUI states
+   that they share stock and shows, for the capsule target, a second line
+   "after founding" computed on stock minus the founding bundle.
+8. Degraded input: no `lab` in state, no buildings, or a target product no
+   building produces → an empty plan (`ready: false`, empty arrays), never a
+   throw.
 
-Not modelled: claim cooldown, Laboratory enhancer, partial units in progress,
-market purchases.
+Not modelled: Laboratory enhancer (needs a base), units already in
+`labQueue` (shape unknown until observed; noted in the UI as "queued units are
+not counted"), market purchases, currency income over time (a rate model is a
+separate parked feature; stocks are treated as static). Coverage with
+`needed = 0` is defined as 1. Name normalisation happens once, at the
+engine entry (`normalizeLab(state.lab)`), never in the GUI.
 
 ## GUI: new "Lab" tab (`public/app.js`, `public/style.css`)
 
 - Cards: capsule target input (number box, default 10, saved in
   localStorage `advisor-lab-capsules`, re-renders on change without a new
-  analyze), chain hours, binding currency with coverage bar, queue slots
-  free / total.
+  analyze), chain hours (pipelined, with sequential as the small print),
+  binding currency with coverage bar, queue slots free / total. A one-line
+  note: "queued units are not counted; stocks are treated as static".
 - "Per building" table (sortable): stage, units to run, timer now, hours,
   inputs needed vs stock (short in red), critical marker.
 - "Raw currencies" table: needed / stock / coverage bar / capsules supported.
 - "Upgrade ROI" list: top 5 buildings by credits per hour saved, plus cost to
   floor for the critical one.
-- Speed multiplier note for the critical building (first affordable x that
-  cuts at least 1 hour).
-- Base founding card: 5/5 materials ready, or shortfalls, plus refill hours
-  after founding.
+- Speed multiplier note for the critical building: best affordable x, hours
+  saved, extra inputs consumed.
+- Base founding card: 5/5 materials ready, or shortfalls, plus capsule chain
+  hours after founding (stock minus the bundle).
+- Zero-unit buildings stay in the payload and are hidden in the table by
+  default.
 - Tab count badge: number of raw shortfalls for the capsule target.
 
 The client re-runs only the cheap expansion/timing math when the target box
@@ -141,10 +181,14 @@ Synthetic 10-building chain identical to the live one at level 20:
   2M of each Circuit/Fusion currency.
 - Stock netting: 5,000 ingots in stock → Foundry runs 0 units.
 - Timer: level 20 on a 45 s base → 43 s; level 500 → 5 s floor.
-- Stage times: seven stage-1 buildings on 10 slots → stage time = longest
-  building; on 4 slots → greedy packing.
+- Stage times: seven stage-1 buildings on 10 free slots → stage time =
+  longest building; on 4 free slots → 2 waves. `hoursPipelined` = critical
+  hours + 10 min × downstream stages; `hoursSequential` = sum of stage
+  maxes.
 - ROI ordering: the critical building ranks first; a zero-unit building has
-  no ROI row.
+  no ROI row; a non-critical building has hoursSaved 0.
+- Degraded: state without `lab` → empty plan, no throw.
+- Rounding: engine keeps floats; tests compare with tolerance; GUI rounds.
 - Base founding: stocks at 5,000 each → `ready = true`, zero hours.
 - Speed table: x10 multiplies input by 77.7 and divides time by 10.
 
