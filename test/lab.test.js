@@ -308,3 +308,59 @@ describe("LabMath.planTarget: ROI and speed", () => {
     assert.equal(plan.ready, true);
   });
 });
+
+describe("planLab (lib/lab.js)", () => {
+  const { planLab, FOUNDING_BUNDLE } = require("../lib/lab.js");
+  const liveState = () => ({
+    lab: { buildings: liveBuildings(), queue: [], queueSlots: 10 },
+    commonResources: { gold: 14.8e6, silver: 16.5e6, copper: 25.6e6, platinum: 5.8e6, diamond: 683e6, ruby: 717e6,
+      emerald: 727e6, sapphire: 654e6, water: 28.1e6, nitrogen: 7.5e6, sulfur: 17.2e6, carbon: 16e6,
+      helium: 15.1e6, methane: 24.9e6, ammonia: 26.8e6, hydrogen: 18.2e6 },
+    rareCurrencies: { silicon: 1.28e6, cobalt: 22.9e6, argon: 0.64e6, dark_matter: 0.74e6 },
+    materials: [
+      { name: "ingots", quantity: 5000 }, { name: "refined crystals", quantity: 5000 },
+      { name: "high end crystals", quantity: 5000 }, { name: "propulsors", quantity: 5000 },
+      { name: "nanoconductors", quantity: 5000 }, { name: "microcircuits", quantity: 1600 },
+      { name: "fusion cells", quantity: 1600 }, { name: "fuel cell casing", quantity: 0 },
+      { name: "unstable fuel", quantity: 0 }, { name: "cog", quantity: 2817 },
+    ],
+  });
+
+  test("founding bundle is the five intermediates x 5000", () => {
+    assert.deepEqual(FOUNDING_BUNDLE.map(b => b.product), ["ingots", "refined crystals", "high end crystals", "propulsors", "nanoconductors"]);
+    assert.ok(FOUNDING_BUNDLE.every(b => b.units === 5000));
+  });
+
+  test("live-shaped state: stocks merged and normalised, both targets computed", () => {
+    const lab = planLab(liveState(), { capsules: 10 });
+    assert.equal(lab.available, true);
+    assert.equal(lab.stocks["dark matter"], 0.74e6);
+    assert.equal(lab.stocks["ingots"], 5000);
+    assert.equal(lab.queueSlots, 10);
+    assert.equal(lab.freeSlots, 10);
+    assert.equal(lab.targets.capsules.units, 10);
+    // 10 capsules need 2000 of each intermediate; 5000 in stock covers the
+    // five founding materials, so only microcircuits/fusion cells (1600) and
+    // the casing/fuel/capsule buildings run.
+    const runs = Object.fromEntries(lab.targets.capsules.buildings.map(b => [b.name, b.unitsToRun]));
+    assert.equal(runs["Foundry"], 0);
+    assert.equal(runs["Circuit Integration Facility"], 400);
+    assert.equal(runs["Energetic Fusion Center"], 400);
+    assert.equal(runs["Module Assembly Plant"], 100);
+    // argon: 400 * 1000 = 400k needed vs 640k stock -> covered
+    assert.equal(lab.targets.capsules.ready, true);
+    // founding: everything in stock already
+    assert.equal(lab.targets.baseFounding.ready, true);
+    assert.equal(lab.targets.baseFounding.hoursPipelined, 0);
+    // after founding, the five intermediates are gone -> Foundry must run and platinum binds
+    const af = lab.targets.capsules.afterFounding;
+    assert.ok(af.hoursPipelined > lab.targets.capsules.hoursPipelined);
+    assert.equal(af.binding.name, "platinum"); // 2000 ingots need 20M platinum, stock 5.8M
+  });
+
+  test("degraded: no lab in state", () => {
+    const lab = planLab({ commonResources: {}, materials: [] }, { capsules: 10 });
+    assert.equal(lab.available, false);
+    assert.equal(lab.targets, null);
+  });
+});
