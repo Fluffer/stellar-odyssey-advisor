@@ -296,3 +296,32 @@ describe("cap context on actions and in contextTotals", () => {
     assert.equal(cr.stun, undefined);
   });
 });
+
+describe("restrictDefault still allows same-stat upgrades", () => {
+  test("resources variant: upgrading an installed battling_xp is suggested, a fresh battling_xp into a free slot is not", () => {
+    const ship = {
+      probes_slot: {
+        name: "Test Probes", level: 1, rarity: "legendary",
+        catalysts: [
+          cat("bx83", "battling_xp", "uncommon", 83, { activity: "default" }),      // 12.45
+          cat("gy1", "gathering_yield", "uncommon", 90, { activity: "default" }),  // 13.5
+        ], // 2 of 4 slots used
+      },
+    };
+    const pool = [
+      cat("bx92", "battling_xp", "uncommon", 92),   // 13.8 -> same-stat upgrade, +1.35
+      cat("bx70", "battling_xp", "uncommon", 70),   // 10.5 -> would only fit a free slot (halved), must be blocked
+    ];
+    const res = core.planInstalls(ship, pool, {
+      statWeights: { battling_xp: 0.01, gathering_yield: 3 },
+      restrictDefault: ["gathering_yield", "gathering_xp", "catalyst_drop_chance", "fuel_efficiency"],
+    });
+    const def = res.actions.filter(a => a.activity === "default");
+    const up = def.find(a => a.add._id === "bx92");
+    assert.ok(up, "same-stat upgrade must be suggested");
+    assert.equal(up.action, "replace");
+    assert.equal(up.remove._id, "bx83");
+    assert.ok(Math.abs(up.gain - 1.35) < 0.001);
+    assert.ok(!def.some(a => a.add._id === "bx70"), "a new battling_xp in a free default slot stays blocked");
+  });
+});
