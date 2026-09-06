@@ -125,6 +125,28 @@ recent snapshot immediately (marked as stale) until you analyze fresh.
 - `node check-page.js` — sanity check: syntax-checks the GUI scripts in `public/` and
   verifies `index.html` references them (useful after editing the GUI code)
 
+### Troubleshooting: "game not found"
+
+Discovery does not depend on the game's name. It enumerates every listening TCP port
+with its owning process, tries the most game-like candidates first (exact process name,
+then a path mentioning the game, then anything under `steamapps`, then any windowed
+`.exe`), and confirms a candidate by asking the page itself whether it exposes the game's
+Pinia stores. So a renamed executable, a non-Steam copy, or playing in another language
+all still resolve — the game is one Electron build that switches language in-app, so the
+process stays `Stellar Odyssey.exe` regardless.
+
+The error message names the stage that failed:
+
+- *could not enumerate listening ports* — PowerShell or `Get-NetTCPConnection` is blocked
+- *no debug port found* — the launch option did not take effect. Check the Steam launch
+  options read exactly `%command% --remote-debugging-port=8788`, and start the game **from
+  Steam** (a desktop shortcut does not inherit `%command%`)
+- *a debug port is open but no page on it is the game* — log in and get past the loading
+  screen, then retry
+
+If it fails before any of that with `WebSocket is not defined`, the Node version is too
+old — see Requirements.
+
 ## Notes and limits
 
 - **Droid/clone purchase prices**: until you open the Gathering/Battling trainer pages

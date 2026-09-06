@@ -14,7 +14,7 @@ const {
   catalystValue, effInGroup, groupValue, fmtVal, fmtCat, fmtAct, itemGroups,
 } = require("./lib/value.js");
 const {
-  CDP, evalInPage, READ_ALL, discoverGameWsUrl, fetchJson, readGameState,
+  CDP, evalInPage, READ_ALL, discoverGame, discoverGameWsUrl, fetchJson, readGameState,
 } = require("./lib/cdp.js");
 const { planCatalystMergeGroups, tierThreshold, planMerges } = require("./lib/merges.js");
 const { statTotalsByContext, planInstalls, inheritedGroupInfo } = require("./lib/installs.js");
@@ -384,5 +384,5 @@ module.exports = {
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
   petHoursToNextLevel, planPets, planInventory, planMaterials, NPC_MATERIAL_SOURCES,
   planShipItems, planLab, planBase: planBaseFromState,
-  CDP, evalInPage, READ_ALL, discoverGameWsUrl, fetchJson, readGameState, analyze,
+  CDP, evalInPage, READ_ALL, discoverGame, discoverGameWsUrl, fetchJson, readGameState, analyze,
 };
