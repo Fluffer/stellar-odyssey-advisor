@@ -119,8 +119,10 @@ node advisor-server.js
 ```
 
 Then open **http://localhost:8787** and click **Analyze now**
-(there is also an auto-refresh-every-60s checkbox). On load the page shows the most
-recent snapshot immediately (marked as stale) until you analyze fresh.
+(there is also an auto-refresh checkbox with an interval in minutes next to it — 60 by
+default, anything from 1 to 1440). The interval is remembered between sessions; the
+checkbox is not, so opening the page never starts analyzing on its own. On load the page
+shows the most recent snapshot immediately (marked as stale) until you analyze fresh.
 
 ### Extras
 

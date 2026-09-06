@@ -13,7 +13,10 @@
     <div class="toolbar">
       <button id="refresh" onclick="refresh()">Analyze now</button>
       <label style="color:var(--dim);font-size:12px">
-        <input type="checkbox" id="auto" onchange="toggleAuto(this.checked)"> auto every 60s
+        <input type="checkbox" id="auto" onchange="toggleAuto(this.checked)"> auto every
+        <input type="number" id="autoMins" min="1" max="1440" step="1" value="60"
+               title="Minutes between automatic analyses (1-1440)"
+               onchange="setAutoMins(this.value)"> min
       </label>
       <span id="status"></span>
     </div>

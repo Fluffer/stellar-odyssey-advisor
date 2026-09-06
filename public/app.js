@@ -1346,9 +1346,36 @@ async function refresh() {
   }
   btn.disabled = false;
 }
+// ---- auto-refresh interval (minutes, localStorage-backed) ----
+// The interval is remembered; the checkbox deliberately is not, so opening the
+// page never starts analyzing on its own.
+const AUTO_MINS_DEFAULT = 60;
+const AUTO_MINS_MAX = 1440; // 24h
+
+function autoMins() {
+  try {
+    const v = parseInt(localStorage.getItem('advisor-auto-mins') || '', 10);
+    if (Number.isFinite(v) && v >= 1 && v <= AUTO_MINS_MAX) return v;
+  } catch (e) {}
+  return AUTO_MINS_DEFAULT;
+}
+
+// Clamp whatever was typed, write the accepted value back into the field so the
+// GUI never claims an interval it is not using, and reschedule a running timer.
+function setAutoMins(raw) {
+  let n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) n = AUTO_MINS_DEFAULT;
+  n = Math.min(AUTO_MINS_MAX, Math.max(1, n));
+  const el = document.getElementById('autoMins');
+  if (el) el.value = n;
+  try { localStorage.setItem('advisor-auto-mins', String(n)); } catch (e) {}
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = setInterval(refresh, n * 60000); }
+  return n;
+}
+
 function toggleAuto(on) {
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-  if (on) { refresh(); autoTimer = setInterval(refresh, 60000); }
+  if (on) { refresh(); autoTimer = setInterval(refresh, autoMins() * 60000); }
 }
 function setTab(t) {
   window.activeTab = t;
@@ -1493,5 +1520,11 @@ document.addEventListener('keydown', function (e) {
     refresh();
   }
 });
+
+// Show the remembered interval in the field before anything can use it.
+(function initAutoMins() {
+  const el = document.getElementById('autoMins');
+  if (el) el.value = autoMins();
+})();
 
 loadLast();

@@ -138,4 +138,6 @@
 
 /* per-activity stat panel (Stats tab) */
 .ctxgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.card input[type=number] { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
+.card input[type=number], .toolbar input[type=number] { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
+/* Auto-refresh interval: wide enough for 4 digits, no more. */
+.toolbar input[type=number] { width: 46px; text-align: right; }
