@@ -384,7 +384,44 @@ describe("lib/base.js planBaseFromState", () => {
     s.dailyQuests = { claimed: 3, completed: 4, total: 5 };
     const b = planBaseFromState(s, { now: 1786174949 + 27 * 86400 });
     assert.equal(b.input.questsClaimed, 3);
+    assert.equal(b.input.questsKnown, true);
     near(b.plan.upkeep.coverage, 0.45);
+  });
+
+  // DailyQuestsStore stays empty until the player opens the panel in-game, so
+  // an empty list must not be reported as a confident "0% covered".
+  test("an unloaded DailyQuestsStore is unknown coverage, not zero claimed", () => {
+    const now = 1786174949 + 27 * 86400;
+    for (const dq of [null, { claimed: 0, completed: 0, total: 0 }]) {
+      const s = liveState();
+      s.dailyQuests = dq;
+      const b = planBaseFromState(s, { now });
+      assert.equal(b.input.questsKnown, false, "store absent/empty -> unknown");
+      assert.equal(b.plan.upkeep.questsKnown, false);
+      assert.equal(b.plan.upkeep.coverage, 0, "no coverage claimed when unknown");
+      assert.equal(b.plan.upkeep.netPerDay, b.plan.upkeep.perDay, "net == gross");
+      if (b.plan.upkeepNow) assert.equal(b.plan.upkeepNow.questsKnown, false);
+    }
+
+    // A genuinely loaded store with nothing claimed is a KNOWN 0%.
+    const s2 = liveState();
+    s2.dailyQuests = { claimed: 0, completed: 2, total: 5 };
+    const b2 = planBaseFromState(s2, { now });
+    assert.equal(b2.input.questsKnown, true);
+    assert.equal(b2.plan.upkeep.coverage, 0);
+  });
+
+  test("income block exposes what avgDaily is made of (lifetime / account age)", () => {
+    const s = liveState();
+    const now = 1786174949 + 27 * 86400;
+    const b = planBaseFromState(s, { now });
+    assert.equal(b.income.lifetimeCredits, s.account.lifetimeCredits);
+    assert.equal(b.income.registered, s.account.registered);
+    near(b.income.accountDays, 27);
+    assert.equal(b.income.avgDaily, b.input.avgDaily);
+    assert.equal(b.income.recent, null, "filled in by the server, not the planner");
+    // The whole point: avgDaily is lifetime / days, not any recent rate.
+    assert.equal(b.income.avgDaily, Math.floor(b.income.lifetimeCredits / 27));
   });
 
   test("degraded: missing account, currentSystem, bookmarks, lab -> no throw", () => {

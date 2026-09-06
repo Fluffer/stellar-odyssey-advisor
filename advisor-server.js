@@ -25,6 +25,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { Worker } = require("node:worker_threads");
+const { recentIncome } = require("./lib/income.js");
 
 const PORT = Number(process.argv[2]) || 8787;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -85,6 +86,10 @@ function historyMetrics(data) {
     parts: p.parts ?? null,
     qc: p.qc ?? null,
     credits: (data.units && data.units.credits) ?? null,
+    // Lifetime credits EARNED (statistics), as opposed to `credits` above,
+    // which is the spendable wallet and drops whenever the player buys
+    // something. Only this one can yield an income rate. See recentIncome().
+    lifetimeCredits: (data.base && data.base.income) ? (data.base.income.lifetimeCredits ?? null) : null,
     installedCount: p.installedCount ?? null,
     unequippedCount: p.unequippedCount ?? null,
     battleAvg,
@@ -121,9 +126,22 @@ async function appendHistory(entry) {
   await fs.promises.appendFile(file, JSON.stringify(entry) + "\n");
 }
 
+// Observed income rate, from lib/income.js (kept there so it is unit-testable
+// without starting this server).
+async function attachRecentIncome(data) {
+  if (!data || !data.base || !data.base.income) return;
+  let lines = [];
+  try {
+    lines = (await fs.promises.readFile(path.join(SNAP_DIR, "history.jsonl"), "utf8")).split("\n").filter(Boolean);
+  } catch (_) { return; /* no history yet */ }
+  data.base.income.recent = recentIncome(lines, Date.now(), Number(data.base.income.lifetimeCredits));
+}
+
 async function saveSnapshot(data) {
   try {
     data.capturedAt = new Date().toISOString();
+    // Before appending this run's own line, so the rate spans a real interval.
+    await attachRecentIncome(data);
     const stamp = data.capturedAt.replace(/[:.]/g, "-");
     await fs.promises.writeFile(path.join(SNAP_DIR, stamp + ".json"), JSON.stringify(data));
     await pruneSnapshots();

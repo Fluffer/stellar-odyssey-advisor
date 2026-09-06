@@ -1161,14 +1161,37 @@ function renderBase(b) {
     '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est"> best known: ' + esc(b.location.best.star) + ' rate ' + b.location.best.rate + (b.location.best.name ? ' at ' + esc(b.location.best.name) : '') + '</span>' : ''));
   html += card('Stellarium / day', plan.stellariumPerDay.toFixed(1) + '<span class="est"> estimate &middot; all unlocks in ' + fmtDays(plan.daysToAllUnlocks) + ' (' + plan.totalStellariumLeft + ' left)</span>');
   const up = plan.upkeep;
+  const inc = b.income || null;
+  // The upkeep basis is the LIFETIME average (all credits ever earned over the
+  // age of the account) -- the game's own formula. Say so, so it is not read as
+  // a current or battle-only income figure.
+  const basis = function (u, unlockedWord) {
+    const share = u.shareOfIncome !== null
+      ? (u.shareOfIncome * 100).toFixed(0) + '% of lifetime avg income (' + fmtC(b.input.avgDaily) + '/day'
+        + (inc && inc.accountDays >= 1 ? ' = ' + fmtC(inc.lifetimeCredits) + ' over ' + inc.accountDays.toFixed(1) + ' d' : '') + ')'
+      : 'income unknown';
+    const quests = u.questsKnown === false
+      ? 'daily quests not loaded, no coverage applied'
+      : 'dailies claimed today cover ' + (u.coverage * 100).toFixed(0) + '%';
+    return '<span class="est"> ' + share + ' &middot; ' + u.passiveCount + ' passive modules' + unlockedWord
+      + ' &middot; ' + quests + ' &rarr; net ' + fmtC(u.netPerDay) + '</span>';
+  };
   if (b.live && plan.upkeepNow) {
-    const now = plan.upkeepNow;
-    html += card('Upkeep / day now', fmtC(now.perDay) + '<span class="est"> ' + (now.shareOfIncome !== null ? (now.shareOfIncome * 100).toFixed(0) + '% of avg daily income (' + fmtC(b.input.avgDaily) + ')' : 'income unknown') +
-      ' &middot; ' + now.passiveCount + ' passive modules unlocked &middot; dailies claimed today cover ' + (now.coverage * 100).toFixed(0) + '% &rarr; net ' + fmtC(now.netPerDay) + '</span>');
+    html += card('Upkeep / day now', fmtC(plan.upkeepNow.perDay) + basis(plan.upkeepNow, ' unlocked'));
   }
-  html += card('Upkeep / day at targets', fmtC(up.perDay) + '<span class="est"> ' + (up.shareOfIncome !== null ? (up.shareOfIncome * 100).toFixed(0) + '% of avg daily income (' + fmtC(b.input.avgDaily) + ')' : 'income unknown') +
-    ' &middot; ' + up.passiveCount + ' passive modules &middot; dailies claimed today cover ' + (up.coverage * 100).toFixed(0) + '% &rarr; net ' + fmtC(up.netPerDay) + '</span>');
+  html += card('Upkeep / day at targets', fmtC(up.perDay) + basis(up, ''));
   html += '</div>';
+  if (inc) {
+    let note = 'Upkeep is billed on your <b>lifetime</b> average: every credit the account has ever earned, divided by its age in days &mdash; the game\'s own formula, not a recent or battle-only rate. It rises as you earn more.';
+    if (inc.recent) {
+      note += ' Observed since ' + esc(new Date(inc.recent.since).toLocaleString()) + ': <b>' + fmtC(inc.recent.perDay) + '/day</b> over ' + inc.recent.days.toFixed(1) + ' d of history'
+        + (inc.avgDaily > 0 ? ' (' + (inc.recent.perDay / inc.avgDaily).toFixed(2) + '&times; the lifetime average)' : '') + '.';
+    } else {
+      note += ' The observed recent rate needs at least an hour between two analyses before it can be shown.';
+    }
+    html += '<div class="sub">' + note + '</div>';
+  }
+  if (up.questsKnown === false) html += '<div class="sub">Daily quest coverage is unknown: the game only fills DailyQuestsStore once you open the daily quests panel in-game. Open it, then analyze again &mdash; claimed dailies cut upkeep by 15% each, up to 75%.</div>';
   if (b.labPanelHint) html += '<div class="sub">Base-tier lab buildings (Aeroforge, Cryovault, Ferric Mill, Prism Nexus, Rare Material Facility) and their price only show up after you open the Laboratory panel in-game once.</div>';
   if (b.location.bodies.length) html += '<div class="sub">Body XP bonus (+10%, permanent) in the current system: ' + b.location.bodies.map(x => esc(x.type) + (x.activity ? ' &rarr; ' + esc(x.activity) : '')).join(', ') + '.</div>';
 

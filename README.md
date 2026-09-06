@@ -157,6 +157,17 @@ old — see Requirements.
 
 ## Notes and limits
 
+- **Base upkeep is billed on a LIFETIME average**, not on recent or battle income: the
+  game's own base module card divides `player.statistics.credits` (every credit ever
+  earned) by the age of the account in days, and the advisor mirrors that formula exactly.
+  It rises as you earn more, and nothing in-game lowers it except the module efficiency
+  boost, PvP base boost and catalyst upkeep reduction. Alongside it the advisor shows the
+  *observed* rate — how fast lifetime credits actually grew across `snapshots/history.jsonl`
+  — which needs at least an hour between two analyses before it appears.
+- **Daily quest coverage** shows as unknown until you open the daily quests panel in-game
+  once: `DailyQuestsStore` is empty before that, so "nothing claimed" and "not loaded" are
+  indistinguishable in the raw state. While unknown, no coverage is applied, so the net
+  upkeep shown is a worst case (each claimed daily cuts it 15%, up to 75%).
 - **Droid/clone purchase prices**: until you open the Gathering/Battling trainer pages
   the advisor uses the known curve (every unit costs 10× the previous one, the 8th costs
   100B, i.e. 10^(n+3) credits) and marks the price "(curve)". Opening a trainer page once
@@ -187,6 +198,7 @@ old — see Requirements.
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
 | `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
+| `lib/income.js` | Observed income rate from the history log |
 | `check-page.js` | GUI file sanity checker |
 | `diagnose-connection.js` | Connection diagnostic (why "game not found") |
 | `package.json` | Metadata, `npm` scripts and the Node version floor |

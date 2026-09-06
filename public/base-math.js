@@ -261,10 +261,14 @@ function planBase(input) {
     t.upkeepPerHourAtTarget = tick * 6;
     perTick += tick;
   }
-  const coverage = questsCoverage(input.questsClaimed);
+  // DailyQuestsStore is empty until the player opens the daily quests panel
+  // in-game, so "0 claimed" and "not loaded" look identical in the raw state.
+  // When it is not loaded, claim no coverage rather than silently assuming 0%.
+  const questsKnown = input.questsKnown !== false;
+  const coverage = questsKnown ? questsCoverage(input.questsClaimed) : 0;
   const perDayUpkeep = perTick * TICKS_PER_DAY;
   const upkeep = {
-    passiveCount, perTick, perHour: perTick * 6, perDay: perDayUpkeep, coverage,
+    passiveCount, perTick, perHour: perTick * 6, perDay: perDayUpkeep, coverage, questsKnown,
     netPerDay: perDayUpkeep * (1 - coverage),
     shareOfIncome: input.avgDaily > 0 ? perDayUpkeep / input.avgDaily : null,
   };
@@ -277,7 +281,7 @@ function planBase(input) {
     let tick = 0;
     for (const m of passiveNow) tick += upkeepPerTick(input.avgDaily, passiveNow.length, moduleBoost(m, eff), input.pvpBaseBoost, input.upkeepReduction);
     const day = tick * TICKS_PER_DAY;
-    upkeepNow = { passiveCount: passiveNow.length, perTick: tick, perHour: tick * 6, perDay: day, coverage, netPerDay: day * (1 - coverage), shareOfIncome: input.avgDaily > 0 ? day / input.avgDaily : null };
+    upkeepNow = { passiveCount: passiveNow.length, perTick: tick, perHour: tick * 6, perDay: day, coverage, questsKnown, netPerDay: day * (1 - coverage), shareOfIncome: input.avgDaily > 0 ? day / input.avgDaily : null };
   }
 
   // Stockpile: per material totals vs stock; production time via the lab
