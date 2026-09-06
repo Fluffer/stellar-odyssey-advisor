@@ -8,6 +8,19 @@
 //
 // Usage: node advisor-server.js [port]
 
+// Fail loudly and early on an old runtime. package.json's "engines" is only
+// advisory here (there is no npm install step to enforce it), and the real
+// symptom otherwise is a bare "WebSocket is not defined" from lib/cdp.js at
+// the first analyze -- the global WebSocket it uses only exists from Node 22.
+if (typeof WebSocket === "undefined") {
+  console.error(
+    "This advisor needs Node 22 or newer (it uses the built-in WebSocket).\n" +
+    "You are running " + process.version + ". Install Node 22 LTS or newer and retry.\n" +
+    "Run `node diagnose-connection.js` for a full check."
+  );
+  process.exit(1);
+}
+
 const http = require("http");
 const fs = require("fs");
 const path = require("path");

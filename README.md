@@ -85,7 +85,9 @@ interface, so it cannot spend, craft, equip or change anything on your account.
 ## Requirements
 
 - **Windows** (game-process discovery uses PowerShell)
-- **Node.js 22 or newer** — no npm dependencies, standard library only, nothing to install
+- **Node.js 22 or newer** — no npm dependencies, standard library only, nothing to install.
+  The version matters: the CDP client uses Node's built-in `WebSocket`, which only exists
+  from Node 22. On anything older the server refuses to start and says so.
 - **Stellar Odyssey** (Steam version)
 
 ## One-time setup: start the game with debugging enabled
@@ -124,6 +126,8 @@ recent snapshot immediately (marked as stale) until you analyze fresh.
 
 - `node check-page.js` — sanity check: syntax-checks the GUI scripts in `public/` and
   verifies `index.html` references them (useful after editing the GUI code)
+- `node diagnose-connection.js` — walks every stage of the connection to the game and
+  reports which stage fails and how to fix it (see below)
 
 ### Troubleshooting: "game not found"
 
@@ -180,6 +184,8 @@ old — see Requirements.
 | `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
 | `check-page.js` | GUI file sanity checker |
+| `diagnose-connection.js` | Connection diagnostic (why "game not found") |
+| `package.json` | Metadata, `npm` scripts and the Node version floor |
 
 ## Tests
 

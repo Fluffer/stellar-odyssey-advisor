@@ -1,0 +1,19 @@
+{
+  "name": "stellar-odyssey-advisor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Advisor for Stellar Odyssey: reads the running game over the Chrome DevTools Protocol and plans crafting, installs, merges, units, tech, pets, the lab and the base.",
+  "type": "commonjs",
+  "main": "advisor-server.js",
+  "scripts": {
+    "start": "node advisor-server.js",
+    "test": "node --test",
+    "diagnose": "node diagnose-connection.js",
+    "check": "node check-page.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
