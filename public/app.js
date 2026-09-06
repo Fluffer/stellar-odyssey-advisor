@@ -1,4 +1,5 @@
-let autoTimer = null;
+let autoTimer = null;   // repeating auto-refresh interval
+let autoKickoff = null; // one-shot timer for the first run after a restore
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ---- localStorage-backed "done" checkmarks (installs & merges rows) ----
@@ -1373,9 +1374,34 @@ function setAutoMins(raw) {
   return n;
 }
 
-function toggleAuto(on) {
+function autoOn() {
+  try { return localStorage.getItem('advisor-auto-on') === '1'; } catch (e) { return false; }
+}
+
+function clearAuto() {
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-  if (on) { refresh(); autoTimer = setInterval(refresh, autoMins() * 60000); }
+  if (autoKickoff) { clearTimeout(autoKickoff); autoKickoff = null; }
+}
+
+// firstDelayMs = 0 means analyze straight away (the user just ticked the box).
+// A positive delay is the page-load case: the snapshot already on screen counts
+// as elapsed time, so a reload neither re-analyzes needlessly nor lets the data
+// go a full extra interval stale.
+function startAuto(firstDelayMs) {
+  clearAuto();
+  const wait = Math.max(0, Math.min(firstDelayMs || 0, autoMins() * 60000));
+  const begin = function () {
+    autoKickoff = null;
+    refresh();
+    autoTimer = setInterval(refresh, autoMins() * 60000);
+  };
+  if (wait === 0) begin();
+  else autoKickoff = setTimeout(begin, wait);
+}
+
+function toggleAuto(on) {
+  try { localStorage.setItem('advisor-auto-on', on ? '1' : '0'); } catch (e) {}
+  if (on) startAuto(0); else clearAuto();
 }
 function setTab(t) {
   window.activeTab = t;
@@ -1399,8 +1425,11 @@ async function loadLast() {
       const when = d.capturedAt ? new Date(d.capturedAt).toLocaleString() : 'unknown time';
       status.textContent = ' showing snapshot from ' + when + ' — click "Analyze now" for fresh data';
       status.style.color = 'var(--warn)';
+      const t = Number(new Date(d.capturedAt));
+      return Number.isFinite(t) ? t : null; // when the shown snapshot was taken
     }
   } catch (e) { /* no snapshot yet -- keep the "Click Analyze now" empty-note */ }
+  return null;
 }
 
 const HISTORY_METRICS = [
@@ -1521,10 +1550,20 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// Show the remembered interval in the field before anything can use it.
-(function initAutoMins() {
+// Restore the remembered interval and checkbox before anything can use them.
+(function initAuto() {
   const el = document.getElementById('autoMins');
   if (el) el.value = autoMins();
+  const box = document.getElementById('auto');
+  if (box) box.checked = autoOn();
 })();
 
-loadLast();
+// Auto-refresh restored from a previous session starts once the last snapshot
+// is on screen: its age counts towards the interval, so a page reload only
+// analyzes immediately when one was already due.
+loadLast().then(function (capturedAt) {
+  if (!autoOn()) return;
+  const every = autoMins() * 60000;
+  const age = capturedAt === null ? Infinity : Date.now() - capturedAt;
+  startAuto(age >= every ? 0 : every - age);
+});
