@@ -64,7 +64,13 @@ function tableHtml(id, data, columns) {
     const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
     html += '<th class="' + (c.numeric ? 'num' : '') + '" onclick="sortTable(' + jsStr(id) + ',' + i + ')">' + esc(c.label) + arrow + '</th>';
   });
-  html += '</tr></thead><tbody>' + tbodyHtml(columns, rows) + '</tbody></table></div>';
+  // A header with no body reads as a broken table, not as "nothing here".
+  // Several tables (raw lab resources, empty material groups) are legitimately
+  // empty in most captures.
+  const body = rows.length
+    ? tbodyHtml(columns, rows)
+    : '<tr><td colspan="' + columns.length + '" style="color:var(--dim);font-style:italic">nothing to show</td></tr>';
+  html += '</tr></thead><tbody>' + body + '</tbody></table></div>';
   return html;
 }
 function sortTable(id, col) {
@@ -844,13 +850,20 @@ function renderTech(t) {
 
   if (t.battle && t.battle.rows.length) {
     html += '<h2>Combat skill ranking (battle-simulated)</h2>';
-    html += '<div class="sub">+1 level of each skill, simulated: average max NPC level gained @ &ge;98% winrate across all 8 NPC types.</div>';
+    html += '<div class="sub">+1 level of each skill, measured as the <b>winrate gain at a fixed probe level</b> &mdash; the level where your current build wins about half its fights, the most sensitive part of the curve. ' +
+      'Both builds run the same seeded battles, so the comparison carries no simulation noise' +
+      (t.battle.winratePointsPerLevel ? ', and the gain is converted to equivalent NPC levels at ' + t.battle.winratePointsPerLevel + ' winrate points per level' : '') + '. ' +
+      'A skill reading 0 showed <b>no measurable gain</b> over ' + (t.battle.probeLevels ? Object.keys(t.battle.probeLevels).length : 8) + ' NPC types &mdash; it is not bought.</div>';
     const combatCols = [
       { label: 'Skill', numeric: false, getValue: r => r.key, render: r => '<b>' + esc(r.key.replaceAll('_', ' ')) + '</b>' },
       { label: 'Level', numeric: true, getValue: r => r.level, render: r => r.level },
       { label: 'Next QC', numeric: true, getValue: r => r.cost, render: r => r.cost + ' QC' },
-      { label: 'Gain', numeric: true, getValue: r => r.avgDelta, render: r => '<b style="color:var(--good)">+' + r.avgDelta + ' avg lvls</b>' },
-      { label: 'Lvls/core', numeric: true, getValue: r => r.levelsPerCore, render: r => '<span class="gain">' + r.levelsPerCore + '</span>' },
+      { label: '+winrate', numeric: true, getValue: r => r.winrateDelta || 0,
+        render: r => r.winrateDelta > 0 ? '+' + r.winrateDelta.toFixed(3) + '%' : (r.winrateDelta < 0 ? r.winrateDelta.toFixed(3) + '%' : '<span style="color:var(--dim)">none</span>') },
+      { label: 'Gain', numeric: true, getValue: r => r.avgDelta,
+        render: r => r.avgDelta > 0 ? '<b style="color:var(--good)">+' + r.avgDelta + ' lvls</b>' : '<span style="color:var(--dim)">' + (r.avgDelta < 0 ? r.avgDelta + ' lvls' : 'no measurable gain') + '</span>' },
+      { label: 'Lvls/core', numeric: true, getValue: r => r.levelsPerCore,
+        render: r => r.levelsPerCore > 0 ? '<span class="gain">' + r.levelsPerCore + '</span>' : '<span style="color:var(--dim)">&mdash;</span>' },
     ];
     html += tableHtml('tbl-combat-ranking', t.battle.rows, combatCols);
   }
@@ -863,9 +876,15 @@ function renderTech(t) {
     }
     html += '<div class="sub">leftover: ' + t.leftoverCores + ' QC</div></div>';
   } else if (t.battle && t.battle.rows.length) {
-    const cheapest = t.battle.rows[t.battle.rows.length - 1];
     const best = t.battle.rows[0];
-    html += '<div class="row"><span>Not enough cores for any combat skill (best pick <b>' + esc(best.key.replaceAll('_', ' ')) + '</b> costs ' + best.cost + ' QC). Keep saving &mdash; cores come from battling drops and merges.</span></div>';
+    // Two different reasons for an empty plan: nothing helps, or nothing is
+    // affordable. Saying "not enough cores" when the real answer is "no skill
+    // measurably helps" would send the player off to farm cores for nothing.
+    if (!(best.avgDelta > 0)) {
+      html += '<div class="row"><span>No combat skill shows a measurable winrate gain at the probe level for your build, so none is worth cores right now. Spend them on merges instead, or re-check after your gear changes.</span></div>';
+    } else {
+      html += '<div class="row"><span>Not enough cores for any combat skill (best pick <b>' + esc(best.key.replaceAll('_', ' ')) + '</b> costs ' + best.cost + ' QC). Keep saving &mdash; cores come from battling drops and merges.</span></div>';
+    }
   }
 
   html += '<h2>All skills</h2>';
@@ -1214,7 +1233,19 @@ function renderLab(lab) {
     html += card('Binding resource', '<span style="color:var(--bad)">' + esc(plan.binding.name) + '</span> ' + covBar(plan.binding.coverage) +
       '<span style="font-size:11px;color:var(--dim)">' + (plan.binding.coverage * 100).toFixed(0) + '% covered</span>');
   } else {
-    html += card('Resources', '<span style="color:var(--good)">all covered</span>');
+    // plan.raw only ever holds resources the chain CANNOT produce, and in
+    // every capture so far it is empty -- so an unqualified "all covered"
+    // read as "no bottleneck" while the per-building table below showed
+    // inputs at 0%. Scope the claim, and name what is actually binding.
+    const producing = [];
+    for (const b of plan.buildings || []) {
+      for (const i of b.inputs || []) if (i.coverage < 1) producing.push(i.name);
+    }
+    html += card('Raw resources', '<span style="color:var(--good)">all covered</span>' +
+      '<span style="font-size:11px;color:var(--dim)"> nothing to gather or buy' +
+      (producing.length
+        ? ' &middot; ' + producing.length + ' input' + (producing.length > 1 ? 's' : '') + ' must be produced first (' + esc(producing.slice(0, 3).join(', ')) + ')'
+        : '') + '</span>');
   }
   html += card('Queue slots', lab.freeSlots + ' free / ' + lab.queueSlots);
   html += card('Critical building' + (plan.criticalGroup.length > 1 ? 's (tied)' : ''), plan.criticalGroup.length ? '<span class="crit">' + plan.criticalGroup.map(esc).join(', ') + '</span>' : '-');
@@ -1359,17 +1390,29 @@ function renderBase(b) {
   html += card('Stellarium star', '<select class="pet-input" onchange="setBaseStar(this.value)">' +
     options.map(s => '<option value="' + esc(s.star) + '"' + (s.star === starName ? ' selected' : '') + '>' + esc(s.star) + ' (rate ' + s.rate + ')' + (s.name ? ' &middot; ' + esc(s.name) : '') + '</option>').join('') +
     '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est"> best known: ' + esc(b.location.best.star) + ' rate ' + b.location.best.rate + (b.location.best.name ? ' at ' + esc(b.location.best.name) : '') + '</span>' : ''));
-  html += card('Stellarium / day', plan.stellariumPerDay.toFixed(1) + '<span class="est"> estimate &middot; all unlocks in ' + fmtDays(plan.daysToAllUnlocks) + ' (' + plan.totalStellariumLeft + ' left)</span>');
+  // Two formulas disagree by the star rate; show the range rather than pick a
+  // side the client cannot settle. See ESTIMATES in public/base-math.js.
+  html += card('Stellarium / day',
+    plan.stellariumPerDay.toFixed(1) +
+    (plan.stellariumPerDayClient && plan.stellariumPerDayClient < plan.stellariumPerDay
+      ? ' <span style="color:var(--warn)">&ndash; ' + plan.stellariumPerDayClient.toFixed(1) + '?</span>' : '') +
+    '<span class="est"> estimate &middot; all unlocks in ' + fmtDays(plan.daysToAllUnlocks) +
+    (plan.daysToAllUnlocksClient && plan.daysToAllUnlocksClient > plan.daysToAllUnlocks
+      ? ' &ndash; ' + fmtDays(plan.daysToAllUnlocksClient) : '') +
+    ' (' + plan.totalStellariumLeft + ' left)</span>');
   const up = plan.upkeep;
   const inc = b.income || null;
-  // The upkeep basis is the LIFETIME average (all credits ever earned over the
-  // age of the account) -- the game's own formula. Say so, so it is not read as
-  // a current or battle-only income figure.
+  // Affordability is measured against the OBSERVED income rate. The share of
+  // the billing basis is NOT a verdict: upkeep is linear in that basis, so the
+  // ratio cancels it out and reads the same at any income -- it is a constant
+  // of the chosen target levels, not a statement about affording them.
   const basis = function (u, unlockedWord) {
-    const share = u.shareOfIncome !== null
-      ? (u.shareOfIncome * 100).toFixed(0) + '% of lifetime avg income (' + fmtC(b.input.avgDaily) + '/day'
-        + (inc && inc.accountDays >= 1 ? ' = ' + fmtC(inc.lifetimeCredits) + ' over ' + inc.accountDays.toFixed(1) + ' d' : '') + ')'
-      : 'income unknown';
+    const observed = inc && inc.recent ? inc.recent.perDay : 0;
+    const share = observed > 0
+      ? '<b>' + (u.perDay / observed * 100).toFixed(1) + '%</b> of your observed ' + fmtC(observed) + '/day'
+      : (u.shareOfIncome !== null
+        ? (u.shareOfIncome * 100).toFixed(0) + '% of the ' + fmtC(b.input.avgDaily) + '/day billing basis (observed rate not measured yet)'
+        : 'income unknown');
     const quests = u.questsKnown === false
       ? 'daily quests not loaded, no coverage applied'
       : 'dailies claimed today cover ' + (u.coverage * 100).toFixed(0) + '%';
@@ -1382,7 +1425,8 @@ function renderBase(b) {
   html += card('Upkeep / day at targets', fmtC(up.perDay) + basis(up, ''));
   html += '</div>';
   if (inc) {
-    let note = 'Upkeep is billed on your <b>lifetime</b> average: every credit the account has ever earned, divided by its age in days &mdash; the game\'s own formula, not a recent or battle-only rate. It rises as you earn more.';
+    const wallet = window.lastData && window.lastData.units ? window.lastData.units.credits : 0;
+    let note = 'Upkeep is billed hourly, on the game\'s <b>statistics.credits</b> counter divided by the age of the account &mdash; the game\'s own formula. That counter is <b>not</b> everything you have earned: it reads ' + fmtC(inc.lifetimeCredits) + ' while your wallet holds ' + fmtC(wallet) + ', so it misses whole sources. The bill rises as the counter does.';
     if (inc.recent) {
       note += ' Observed since ' + esc(new Date(inc.recent.since).toLocaleString()) + ': <b>' + fmtC(inc.recent.perDay) + '/day</b> over ' + inc.recent.days.toFixed(1) + ' d of history'
         + (inc.avgDaily > 0 ? ' (' + (inc.recent.perDay / inc.avgDaily).toFixed(2) + '&times; the lifetime average)' : '') + '.';
@@ -1390,6 +1434,13 @@ function renderBase(b) {
       note += ' The observed recent rate needs at least an hour between two analyses before it can be shown.';
     }
     html += '<div class="sub">' + note + '</div>';
+  }
+  if (plan.stellariumPerDayClient && plan.stellariumPerDayClient < plan.stellariumPerDay) {
+    html += '<div class="sub"><b style="color:var(--warn)">The stellarium rate is contested.</b> The advisor scales the miner yield by the star rate (' +
+      plan.stellariumPerDay.toFixed(1) + '/day here), but the drop-rate display in the client itself is <code>1 + boost/100</code> with no star rate in it (' +
+      plan.stellariumPerDayClient.toFixed(1) + '/day) &mdash; and nothing in the bundle reads the star rate for stellarium, so it may only apply server-side. ' +
+      'Every unlock ETA on this tab inherits the gap (' + fmtDays(plan.daysToAllUnlocks) + ' vs ' + fmtDays(plan.daysToAllUnlocksClient) + ' for all unlocks). ' +
+      'Founding the base settles it: once <code>statistics.stellariumObtained</code> starts moving, the observed rate replaces both.</div>';
   }
   if (up.questsKnown === false) html += '<div class="sub">Daily quest coverage is unknown: the game only fills DailyQuestsStore once you open the daily quests panel in-game. Open it, then analyze again &mdash; claimed dailies cut upkeep by 15% each, up to 75%.</div>';
   if (b.labPanelHint) html += '<div class="sub">Base-tier lab buildings (Aeroforge, Cryovault, Ferric Mill, Prism Nexus, Rare Material Facility) and their price only show up after you open the Laboratory panel in-game once.</div>';
@@ -1466,19 +1517,26 @@ function render(d) {
   const tab = window.activeTab || 'gear';
   const doneSet = loadDone();
   if (d) {
-    document.getElementById('summary').innerHTML = renderSummary(d.player, window.prevData ? window.prevData.player : null);
-    setTabCount('battle', (d.warnings || []).length, true);
-    const curList = variant === 'full' ? d.installs : d.installsResources;
-    setTabCount('installs', (curList || []).length, false);
-    setTabCount('merges', (d.mergePlans || []).length, false);
-    setTabCount('inventory', d.inventory ? d.inventory.counts.sellCandidates : 0, true);
-    setTabCount('materials', d.materials ? d.materials.totals.deficitCount : 0, true);
-    // When the lab tab is active, renderLab() computes the plan itself and
-    // sets this badge from it (avoids computing the plan twice per render).
-    if (tab !== 'lab') setTabCount('lab', d.lab && d.lab.available ? labShortfallCount(d.lab).count : 0, true);
-    // Same story for base: renderBase() computes the plan itself and sets
-    // this badge from it when the tab is active.
-    if (tab !== 'base') setTabCount('base', baseShortfallCount(d.base), true);
+    // Summary and badges are decoration: a game patch that renames one nested
+    // field must not take out all twelve tabs. Each piece fails on its own.
+    const guard = (what, fn) => { try { fn(); } catch (e) { console.warn('render: ' + what + ' failed', e); } };
+    guard('summary', () => {
+      document.getElementById('summary').innerHTML = renderSummary(d.player, window.prevData ? window.prevData.player : null);
+    });
+    guard('badges', () => {
+      setTabCount('battle', (d.warnings || []).length, true);
+      const curList = variant === 'full' ? d.installs : d.installsResources;
+      setTabCount('installs', (curList || []).length, false);
+      setTabCount('merges', (d.mergePlans || []).length, false);
+      setTabCount('inventory', d.inventory && d.inventory.counts ? d.inventory.counts.sellCandidates : 0, true);
+      setTabCount('materials', d.materials && d.materials.totals ? d.materials.totals.deficitCount : 0, true);
+      // When the lab tab is active, renderLab() computes the plan itself and
+      // sets this badge from it (avoids computing the plan twice per render).
+      if (tab !== 'lab') setTabCount('lab', d.lab && d.lab.available ? labShortfallCount(d.lab).count : 0, true);
+      // Same story for base: renderBase() computes the plan itself and sets
+      // this badge from it when the tab is active.
+      if (tab !== 'base') setTabCount('base', baseShortfallCount(d.base), true);
+    });
   }
   let html = '';
   if (tab === 'history') {
@@ -1490,10 +1548,19 @@ function render(d) {
     loadHistory();
     return;
   }
+  // One render function throwing used to leave #content untouched: the page
+  // looked un-analyzed, every tab button did nothing, and no message said why.
+  // Fail loudly, in the tab, and keep the rest of the app alive.
+  try {
   if (tab === 'gear') {
     html += '<h2>Item advisor</h2>' + renderShipItemAdvisor(d.shipItems);
     html += '<h2>Equipped gear</h2>' + renderGear(d.gear);
   } else if (tab === 'battle') {
+    if (d.battleTrusted === false) {
+      html += '<div class="row" style="border-color:rgba(224,91,91,.4)"><span><b style="color:var(--bad)">Squadron boost unknown</b> &mdash; ' +
+        'squadronStore had not populated when this analysis ran, so every battle number below is missing the squadron multiplier ' +
+        '(roughly 45% low) and nothing was written to the history chart. Open the squadron panel in-game, then analyze again.</span></div>';
+    }
     if (d.battleBase) {
       html += '<h2>Current battle benchmark</h2><div class="sub">max NPC level @ &ge;98% winrate (squadron boost included)</div>';
       html += '<div class="cards">' + Object.entries(d.battleBase).map(([npc, lvl]) =>
@@ -1540,6 +1607,14 @@ function render(d) {
   } else if (tab === 'base') {
     html += '<h2>Base planner</h2>' + renderBase(d.base);
   }
+  } catch (e) {
+    console.error('render(' + tab + ') failed', e);
+    html = '<div class="row" style="border-color:rgba(224,91,91,.4)"><span>' +
+      '<b style="color:var(--bad)">This tab could not be rendered.</b> ' +
+      esc(String(e && e.message || e)) +
+      '<br><span style="color:var(--dim)">The analysis data is missing a field this tab needs &mdash; usually a game update that renamed something. ' +
+      'The other tabs still work; the browser console has the stack.</span></span></div>';
+  }
   document.getElementById('content').innerHTML = html;
   document.querySelectorAll('.maintabs button').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
@@ -1559,14 +1634,18 @@ async function refresh() {
     const r = await fetch('/api/analyze', { signal: ctrl.signal });
     clearTimeout(to);
     const d = await r.json();
-    if (d.error) { status.textContent = ' error: ' + d.error; }
+    // A failure must never render in the same colour as a success: an
+    // overnight auto-refresh that quietly died left hours-old numbers on
+    // screen looking freshly analyzed.
+    if (d.error) { status.textContent = ' error: ' + d.error; status.style.color = 'var(--bad)'; }
     else {
       window.lastData = d;
       try { render(d); status.textContent = ' updated ' + new Date().toLocaleTimeString() + ' (' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'; status.style.color = ''; }
-      catch (e) { status.textContent = ' render error: ' + e.message; console.error(e); }
+      catch (e) { status.textContent = ' render error: ' + e.message; status.style.color = 'var(--bad)'; console.error(e); }
     }
   } catch (e) {
     status.textContent = ' failed: ' + (e.name === 'AbortError' ? 'timed out after 90s' : e.message);
+    status.style.color = 'var(--bad)';
   }
   btn.disabled = false;
 }

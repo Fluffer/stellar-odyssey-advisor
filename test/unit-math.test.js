@@ -83,6 +83,18 @@ describe("maxAffordableTarget", () => {
   test("no credits leaves the group where it stands", () => {
     assert.equal(um.maxAffordableTarget(fleet(7), "efficiency", 0).target, 34);
   });
+
+  test("a non-finite budget buys nothing instead of everything", () => {
+    // `spent + inc > credits` is FALSE against NaN, so without an explicit
+    // guard the walk ran to its 500 ceiling and reported target 500.1 at a
+    // cost of 6.3e40 as affordable.
+    for (const bad of [undefined, null, NaN, -5, "", "abc"]) {
+      const m = um.maxAffordableTarget(fleet(7), "efficiency", bad);
+      assert.equal(m.target, 34, "budget " + String(bad));
+      assert.equal(m.cost, 0);
+      assert.equal(um.unitMaxStepsAll(34, bad, 7), 0);
+    }
+  });
 });
 
 describe("emulateGroup", () => {

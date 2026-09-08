@@ -55,12 +55,31 @@ const BODY_BONUSES = {
 const FOUNDING_BUNDLE = ["ingots", "refined crystals", "high end crystals", "propulsors", "nanoconductors"]
   .map(product => ({ product, units: 5000 }));
 
+// CONTESTED ESTIMATE. Two formulas disagree about the miner's yield by the
+// star rate (6x at rate 6), and the client cannot settle it:
+//   minerAmount        - star rate scaled by the module boost. What the
+//                        advisor has always headlined. `starTypeBonuses` is
+//                        exported by the client's constants module but never
+//                        read for stellarium anywhere in the bundle, so the
+//                        star rate may only be applied server-side.
+//   minerAmountClient  - the client's OWN drop-rate display:
+//                        (1 + floor(boost/100)) guaranteed + (boost%100)%
+//                        chance of one more = 1 + boost/100 in expectation,
+//                        with no star rate at all.
+// Both are surfaced until `statistics.stellariumObtained` starts moving (it
+// needs the base founded), at which point the observed rate settles it.
 const ESTIMATES = {
   STELLARIUM_TICK_HOURS: 5,
-  // Stellarium per miner production: star rate scaled by the module boost.
   minerAmount: (starRate, boost) => (starRate || 0) * (1 + (boost || 0) / 100),
+  minerAmountClient: (starRate, boost) => 1 + (boost || 0) / 100,
 };
-const TICKS_PER_DAY = 144;      // one upkeep charge every 10 minutes
+// A module ticks ONCE AN HOUR: the card counts down "Next tick" as
+// 60 - module.tickCounter*10 minutes (a 10-minute worker advances the
+// counter, the tick fires on the 6th), the module's output renders as
+// "(N /hour)" and its upkeep as "<amount> /h" -- the amount being exactly
+// upkeepPerTick() below. It is charged per tick, i.e. hourly, not per worker
+// run; billing it every 10 minutes overstates upkeep 6x.
+const TICKS_PER_DAY = 24;
 const UPKEEP_CAP = 60;          // catalyst base_upkeep_reduction cap (STAT_CAPS)
 
 // --- level cost: client getBaseModuleLevelUpgradeCost, cumulative to L, per material ---
@@ -129,16 +148,31 @@ function avgDailyIncome(lifetimeCredits, registeredSec, nowSec) {
   const days = Math.max(1, ((nowSec || 0) - (registeredSec || 0)) / 86400);
   return Math.floor(Math.max(0, lifetimeCredits || 0) / days);
 }
+// Exactly the game's own accumulation (BaseBuildingPage, total upkeep):
+//   t = floor(avgDaily / 24 / 2 / 9 / <passive AND unlocked count> / 2)
+//   t *= (1 - pvpBaseBoost/100); if (reduction) t *= (1 - reduction/100)
+//   per module: floor(t * (1 + moduleBoost/100))
+// The OUTER floor is per module and was missing here. `passiveCount` is the
+// divisor the game uses: every unlocked passive module, active or not -- but
+// only ACTIVE ones are summed, which is the caller's job.
 function upkeepPerTick(avgDaily, passiveCount, boost, pvpBaseBoost, upkeepReduction) {
   if (!passiveCount || passiveCount <= 0) return 0;
   const red = Math.min(UPKEEP_CAP, upkeepReduction || 0);
-  return Math.floor((avgDaily || 0) / 24 / 2 / 9 / passiveCount / 2) * (1 + (boost || 0) / 100) * (1 - (pvpBaseBoost || 0) / 100) * (1 - red / 100);
+  let t = Math.floor((avgDaily || 0) / 24 / 2 / 9 / passiveCount / 2);
+  t *= 1 - (pvpBaseBoost || 0) / 100;
+  if (red > 0) t *= 1 - red / 100;
+  return Math.floor(t * (1 + (boost || 0) / 100));
 }
 function questsCoverage(claimed) { return 0.15 * Math.min(5, Math.max(0, claimed || 0)); }
 
 // ESTIMATE: stellarium per day at a star rate and miner boost.
 function stellariumPerDay(starRate, boost) {
   return ESTIMATES.minerAmount(starRate, boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
+}
+// The same day, under the client's own drop-rate formula (no star rate).
+// The pessimistic end of the range; see the ESTIMATES comment.
+function stellariumPerDayClient(starRate, boost) {
+  return ESTIMATES.minerAmountClient(starRate, boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
 }
 
 // Lab math is needed for material production times. In Node it is a
@@ -258,7 +292,7 @@ function planBase(input) {
   for (const t of targets) {
     if (!passiveNames.includes(t.name)) continue;
     const tick = upkeepPerTick(input.avgDaily, passiveCount, t.boostAtTarget, input.pvpBaseBoost, input.upkeepReduction);
-    t.upkeepPerHourAtTarget = tick * 6;
+    t.upkeepPerHourAtTarget = tick;
     perTick += tick;
   }
   // DailyQuestsStore is empty until the player opens the daily quests panel
@@ -267,8 +301,12 @@ function planBase(input) {
   const questsKnown = input.questsKnown !== false;
   const coverage = questsKnown ? questsCoverage(input.questsClaimed) : 0;
   const perDayUpkeep = perTick * TICKS_PER_DAY;
+  // shareOfIncome is NOT an affordability signal: upkeep is linear in
+  // avgDaily (bar the floor), so this ratio cancels avgDaily out and is a
+  // constant of the chosen target levels -- it reads the same at any income.
+  // Compare perDay against an OBSERVED income rate to judge affordability.
   const upkeep = {
-    passiveCount, perTick, perHour: perTick * 6, perDay: perDayUpkeep, coverage, questsKnown,
+    passiveCount, perTick, perHour: perTick, perDay: perDayUpkeep, coverage, questsKnown,
     netPerDay: perDayUpkeep * (1 - coverage),
     shareOfIncome: input.avgDaily > 0 ? perDayUpkeep / input.avgDaily : null,
   };
@@ -277,11 +315,14 @@ function planBase(input) {
   // levels, using only the passive modules already unlocked live.
   let upkeepNow = null;
   if (input.founded) {
+    // The game divides by every unlocked passive module but bills only the
+    // ACTIVE ones, so switching a passive module off is a real upkeep lever.
     const passiveNow = modules.filter(m => m.type === "passive" && m.unlocked);
+    const billed = passiveNow.filter(m => m.active);
     let tick = 0;
-    for (const m of passiveNow) tick += upkeepPerTick(input.avgDaily, passiveNow.length, moduleBoost(m, eff), input.pvpBaseBoost, input.upkeepReduction);
+    for (const m of billed) tick += upkeepPerTick(input.avgDaily, passiveNow.length, moduleBoost(m, eff), input.pvpBaseBoost, input.upkeepReduction);
     const day = tick * TICKS_PER_DAY;
-    upkeepNow = { passiveCount: passiveNow.length, perTick: tick, perHour: tick * 6, perDay: day, coverage, questsKnown, netPerDay: day * (1 - coverage), shareOfIncome: input.avgDaily > 0 ? day / input.avgDaily : null };
+    upkeepNow = { passiveCount: passiveNow.length, billedCount: billed.length, perTick: tick, perHour: tick, perDay: day, coverage, questsKnown, netPerDay: day * (1 - coverage), shareOfIncome: input.avgDaily > 0 ? day / input.avgDaily : null };
   }
 
   // Stockpile: per material totals vs stock; production time via the lab
@@ -308,6 +349,12 @@ function planBase(input) {
   return {
     unlocks, totalStellariumLeft, stellariumPerDay: perDay,
     daysToAllUnlocks: perDay > 0 ? totalStellariumLeft / perDay : Infinity,
+    // Pessimistic end of the contested miner-yield estimate.
+    stellariumPerDayClient: stellariumPerDayClient(starRate, minerBoost),
+    daysToAllUnlocksClient: (() => {
+      const low = stellariumPerDayClient(starRate, minerBoost);
+      return low > 0 ? totalStellariumLeft / low : Infinity;
+    })(),
     targets, stockpile, buyFirst, upkeep, upkeepNow,
   };
 }
@@ -317,7 +364,7 @@ const BaseMath = {
   levelCostCumulative, levelCost, levelsCost,
   stellariumStep, unlockCost, tierCost, tiersCost,
   moduleBoost, expectedOutputPerTick, unlockOrder,
-  avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay,
+  avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay, stellariumPerDayClient,
   defaultModules, normalizeBase, planUnlocks, materialsFor, planBase,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = BaseMath;

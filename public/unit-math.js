@@ -37,6 +37,7 @@ function cumulativeUnitCost(from, to) {
 function unitMaxStepsAll(level, credits, count) {
   let steps = 0, spent = 0;
   if (!count) return 0;
+  if (!isFinite(Number(credits)) || Number(credits) <= 0) return 0;
   for (;;) {
     const next = count * unitStepCost(Number((level + UNIT_STEP).toFixed(1)));
     if (spent + next > credits) break;
@@ -101,12 +102,17 @@ function groupUpgradeCost(units, skill, target) {
 function maxAffordableTarget(units, skill, credits) {
   const levels = (units || []).map(u => unitStepRound(u[skill]));
   if (!levels.length) return { target: 0, cost: 0 };
+  // A non-finite budget must buy NOTHING: every `spent + inc > credits`
+  // comparison is false against NaN, so the walk would run to its 500 guard
+  // and report an absurd target as affordable.
+  const budget = Number(credits);
+  if (!isFinite(budget) || budget <= 0) return { target: Math.min.apply(null, levels), cost: 0 };
   let target = Math.min.apply(null, levels);
   let spent = 0;
   for (;;) {
     const next = Number((target + UNIT_STEP).toFixed(1));
     const inc = levels.reduce((s, l) => s + (l < next - 1e-9 ? unitStepCost(next) : 0), 0);
-    if (spent + inc > credits) break;
+    if (spent + inc > budget) break;
     spent += inc;
     target = next;
     if (target > 500) break;

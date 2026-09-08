@@ -24,7 +24,7 @@ const {
 } = require("./lib/battle-rating.js");
 const { planInventory } = require("./lib/inventory.js");
 const { unitStepCost, cumulativeUnitCost, unitPrice, planUnits } = require("./lib/units.js");
-const { planTech } = require("./lib/tech.js");
+const { planTech, techBattleRanking } = require("./lib/tech.js");
 const { planPets } = require("./lib/pets.js");
 const { planMaterials, NPC_MATERIAL_SOURCES } = require("./lib/materials.js");
 const { planShipItems } = require("./lib/ship-items.js");
@@ -43,6 +43,19 @@ const {
 // Full analysis. Takes the raw state (from readGameState) and returns a
 // presentation-ready structure for the GUI.
 function analyze(s) {
+  // Normalize the collection-shaped fields ONCE, here, instead of guarding at
+  // every consumer. A store that has not hydrated arrives as null (or, after a
+  // game update, as some other shape) and one such field used to abort the
+  // whole analysis with an unhelpful TypeError.
+  s = Object.assign({}, s, {
+    craft: s.craft || {},
+    ship: s.ship || {},
+    player: s.player || {},
+    catalysts: Array.isArray(s.catalysts) ? s.catalysts : [],
+    droids: Array.isArray(s.droids) ? s.droids : [],
+    blueprints: Array.isArray(s.blueprints) ? s.blueprints : [],
+    materials: Array.isArray(s.materials) ? s.materials : [],
+  });
   const craftLevel = s.craft.crafting_level || 1;
   const bonus = mergeRangeBonus(craftLevel);
   const unequipped = s.catalysts.filter(c => !c.equippedOn);
@@ -327,6 +340,9 @@ function analyze(s) {
     player, gear, warnings, overrideLosses, contextTotals,
     installs, installsResources, freedTexts,
     mergePlans, mergeRequirements, battleNote, battleBase,
+    // false => every battle figure in this analysis is missing the squadron
+    // multiplier; treat them as unknown, not as a regression.
+    battleTrusted: s.ssBattlingBoostKnown !== false,
     projection, inventory,
     units, tech, pets, materials, shipItems, lab, base,
   };
@@ -380,7 +396,7 @@ module.exports = {
   catalystValue, effInGroup, groupValue, fmtVal, fmtCat, fmtAct, itemGroups,
   equippedBonuses, battlePlayer, averageMaxLevel, perNpcMaxLevels, projectShip,
   planCatalystMergeGroups, statTotalsByContext, planInstalls, inheritedGroupInfo, planMerges,
-  BATTLING_NPCS, unitStepCost, cumulativeUnitCost, unitPrice, planUnits, planTech,
+  BATTLING_NPCS, unitStepCost, cumulativeUnitCost, unitPrice, planUnits, planTech, techBattleRanking,
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
   petHoursToNextLevel, planPets, planInventory, planMaterials, NPC_MATERIAL_SOURCES,
   planShipItems, planLab, planBase: planBaseFromState,

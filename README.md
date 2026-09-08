@@ -95,22 +95,24 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   from Node 22. On anything older the server refuses to start and says so.
 - **Stellar Odyssey** (Steam version)
 
-## One-time setup: start the game with debugging enabled
+## Setup: none needed
 
-The advisor talks to the running game through the Chrome DevTools Protocol, which is only
-active when the game is launched with a debug port:
+The advisor talks to the running game through the Chrome DevTools Protocol. The Steam
+build **already exposes a DevTools port** — it opens one on every start without any
+launch option, on a random high port that changes each time. The advisor enumerates
+listening ports and identifies the game by asking each page whether it exposes the game's
+Pinia stores, so the changing port does not matter. Just start the game and run the
+advisor.
 
-1. In Steam: **Library → right-click Stellar Odyssey → Properties**
-2. Under **General**, find **Launch Options**
-3. Enter:
-   ```
-   %command% --remote-debugging-port=8788
-   ```
-4. Close the properties window and start the game normally.
+Verified on the current Steam build: no Steam launch options set, no
+`--remote-debugging-port` on the game's command line, port open regardless (60465 on one
+run, different on the next).
 
-Any free port works — the advisor auto-detects the port on every run, so the game's port
-changing between restarts is fine. Just don't pick a port something else is using
-(8788 is free by default; the advisor's own web GUI uses 8787).
+If a future patch turns that off, `node diagnose-connection.js` will say so, and you can
+pin a port yourself: **Library → right-click Stellar Odyssey → Properties → General →
+Launch Options**, enter `%command% --remote-debugging-port=8788`, and start the game
+**from Steam** (a desktop shortcut does not inherit `%command%`). Any free port works;
+just not 8787, which the advisor's own web GUI uses.
 
 The debug port only exposes the game's internal UI state on `127.0.0.1` — nothing is
 opened to the network.
@@ -151,8 +153,9 @@ process stays `Stellar Odyssey.exe` regardless.
 The error message names the stage that failed:
 
 - *could not enumerate listening ports* — PowerShell or `Get-NetTCPConnection` is blocked
-- *no debug port found* — the launch option did not take effect. Check the Steam launch
-  options read exactly `%command% --remote-debugging-port=8788`, and start the game **from
+- *no debug port found* — the game normally opens a DevTools port on its own, so this
+  means it is not running, or a patch disabled it. If it persists, pin a port with the
+  Steam launch option `%command% --remote-debugging-port=8788` and start the game **from
   Steam** (a desktop shortcut does not inherit `%command%`)
 - *a debug port is open but no page on it is the game* — log in and get past the loading
   screen, then retry
@@ -162,13 +165,20 @@ old — see Requirements.
 
 ## Notes and limits
 
-- **Base upkeep is billed on a LIFETIME average**, not on recent or battle income: the
-  game's own base module card divides `player.statistics.credits` (every credit ever
-  earned) by the age of the account in days, and the advisor mirrors that formula exactly.
-  It rises as you earn more, and nothing in-game lowers it except the module efficiency
-  boost, PvP base boost and catalyst upkeep reduction. Alongside it the advisor shows the
-  *observed* rate — how fast lifetime credits actually grew across `snapshots/history.jsonl`
-  — which needs at least an hour between two analyses before it appears.
+- **Base upkeep is billed hourly on the `statistics.credits` counter**, not on recent or
+  battle income: the game's own base module card divides `player.statistics.credits` by the
+  age of the account in days, and the advisor mirrors that formula exactly. A module ticks
+  once an hour (the card counts down `60 - tickCounter*10` minutes and labels both output
+  and upkeep per hour), so the formula's output is an hourly charge — 24 a day, not one per
+  10-minute worker run. Nothing in-game lowers it except the module efficiency boost, PvP
+  base boost and catalyst upkeep reduction.
+- **`statistics.credits` is not everything you have earned.** On this account it reads
+  ~7.4B while the wallet holds ~12.6B, so it misses whole sources. Treat it as the game's
+  billing counter, nothing more. Affordability is therefore shown against the *observed*
+  rate — how fast credits actually grew across `snapshots/history.jsonl` — which needs at
+  least an hour between two analyses before it appears. The upkeep share of the billing
+  basis is deliberately **not** shown as a verdict: upkeep is linear in that basis, so the
+  ratio cancels out and reads the same at any income.
 - **Daily quest coverage** shows as unknown until you open the daily quests panel in-game
   once: `DailyQuestsStore` is empty before that, so "nothing claimed" and "not loaded" are
   indistinguishable in the raw state. While unknown, no coverage is applied, so the net

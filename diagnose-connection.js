@@ -80,8 +80,10 @@ if (candidates.length) {
   }
 } else {
   bad("no windowed application is listening on any TCP port");
-  info("=> the --remote-debugging-port launch option did not take effect.");
-  info("Check the Steam launch options read exactly:");
+  info("=> the game is not running, or its DevTools port is off.");
+  info("The Steam build opens a DevTools port on its own, on a random port, with no");
+  info("launch option needed - so first check the game is actually running.");
+  info("If it is, pin a port: Steam launch options");
   info("     %command% --remote-debugging-port=8788");
   info("and start the game FROM STEAM - a desktop shortcut or a separate launcher");
   info("process does not inherit %command%.");
@@ -108,7 +110,7 @@ line("");
   }
   if (!anyCdp) {
     bad("no candidate answered /json/list - no debug port is open");
-    info("Same fix as Stage 2: the --remote-debugging-port launch option.");
+    info("Same fix as Stage 2: check the game is running, then pin a debug port.");
   }
   line("");
 

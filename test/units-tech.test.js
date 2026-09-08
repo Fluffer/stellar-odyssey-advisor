@@ -50,6 +50,62 @@ describe("planTech", () => {
   });
 });
 
+describe("techBattleRanking (winrate-at-a-probe-level metric)", () => {
+  // A build strong enough to give the simulator something to measure. Kept
+  // small so the sim stays fast.
+  const battleState = () => ({
+    ssBattlingBoost: 0, quantum_cores: 400, ship: {},
+    player: {
+      stats: { power: 120, precision: 120, evasion: 120, hull: 120 },
+      skills: {
+        battling_weapon_boost: 10, battling_hull_boost: 10,
+        battling_precision_boost: 10, battling_evasion_boost: 10,
+      },
+      clones: [{ critical_chance: 10, critical_damage: 10, dual_shot: 10 }],
+    },
+  });
+
+  test("identical states produce byte-identical rankings", () => {
+    // The old metric differenced two max-level searches that reseeded per
+    // level, so it was not even self-consistent: the same build ranked
+    // weapon -11.5 in one analysis and +9.75 in the next. Holding the level
+    // fixed puts both builds on the same rng stream.
+    const a = core.techBattleRanking(battleState());
+    const b = core.techBattleRanking(battleState());
+    assert.deepEqual(a.rows, b.rows);
+    assert.deepEqual(a.probeLevels, b.probeLevels);
+    assert.equal(a.winratePointsPerLevel, b.winratePointsPerLevel);
+  });
+
+  test("the probe level is where the build wins about half its fights", () => {
+    const r = core.techBattleRanking(battleState());
+    // well below the 98%-winrate benchmark level, and above the floor
+    for (const npc of Object.keys(r.probeLevels)) {
+      assert.ok(r.probeLevels[npc] > 1, npc + " probe should not sit on the floor");
+    }
+    assert.ok(r.winratePointsPerLevel > 0, "winrate must fall as NPC level rises");
+  });
+
+  test("rows carry the raw winrate delta alongside the level equivalent", () => {
+    const r = core.techBattleRanking(battleState());
+    for (const row of r.rows) {
+      assert.equal(typeof row.winrateDelta, "number");
+      // same sign, since one is the other divided by a positive slope
+      if (row.winrateDelta > 0) assert.ok(row.avgDelta > 0);
+      if (row.winrateDelta === 0) assert.equal(row.avgDelta, 0);
+    }
+  });
+
+  test("cores are never spent on a skill with no measurable gain", () => {
+    const t = core.planTech(battleState());
+    const gain = {};
+    for (const row of t.battle.rows) gain[row.key] = row.avgDelta;
+    for (const a of t.allocation) {
+      assert.ok(gain[a.key] > 0, a.key + " was bought with avgDelta " + gain[a.key]);
+    }
+  });
+});
+
 describe("planUnits", () => {
   test("synthetic state shape and cloneMultiplier-based totalMultiplier golden", () => {
     const state = {

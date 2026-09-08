@@ -71,7 +71,10 @@ function serveStatic(res, url) {
 // response, so every step here swallows and logs its own errors.
 function historyMetrics(data) {
   const p = data.player || {};
-  const battleBase = data.battleBase || null;
+  // An analysis that ran without the squadron boost produces battle numbers
+  // ~45% low. Writing those to history plots a collapse that never happened,
+  // so record nothing rather than something wrong.
+  const battleBase = (data.battleTrusted === false) ? null : (data.battleBase || null);
   let battleAvg = null;
   if (battleBase) {
     const vals = Object.values(battleBase);

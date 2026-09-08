@@ -325,3 +325,77 @@ describe("restrictDefault still allows same-stat upgrades", () => {
     assert.ok(!def.some(a => a.add._id === "bx70"), "a new battling_xp in a free default slot stays blocked");
   });
 });
+
+describe("context-only stat caps", () => {
+  // `block` is the one stat whose cap lives ONLY in STAT_CAPS_BY_CONTEXT
+  // (40 normally, 25 in galaxy boss). A bare STAT_CAPS lookup left it
+  // undefined, so every headroom guard in the planner was skipped and it
+  // recommended block catalysts past the cap while the warnings tab flagged
+  // the very same total as over.
+  test("block stops at its context cap instead of filling the group", () => {
+    const ship = { weapon_slot: { name: "W", level: 1, rarity: "normal", catalysts: [] } };
+    const pool = [
+      cat("b1", "block", "legendary", 100),
+      cat("b2", "block", "legendary", 100),
+      cat("b3", "block", "legendary", 100),
+    ];
+    const res = core.planInstalls(ship, pool, {});
+    // one legendary/range-100 block is worth 40 = the whole default cap, so
+    // the second (which would otherwise land at a halved 20) is refused.
+    assert.deepEqual(res.actions.map(a => a.add._id), ["b1"]);
+    assert.equal(res.actions[0].gain, 40);
+    assert.ok(!res.used.has("b2"));
+  });
+
+  test("a capped stat that IS in STAT_CAPS still behaves the same", () => {
+    const ship = { weapon_slot: { name: "W", level: 1, rarity: "normal", catalysts: [] } };
+    const pool = [cat("d1", "defense", "legendary", 100), cat("d2", "defense", "legendary", 100)];
+    const res = core.planInstalls(ship, pool, {});
+    // defense cap 50: first takes 40, second is capped down to the last 10.
+    assert.deepEqual(res.actions.map(a => [a.add._id, a.gain]), [["d1", 40], ["d2", 10]]);
+  });
+});
+
+describe("analyze() end to end", () => {
+  // Nothing used to call analyze() in the tests, so a typo in the top-level
+  // assembly (a stray `state` instead of `s`) reached the running server as a
+  // 500 with "state is not defined" and only a live request caught it.
+  const minimalState = () => ({
+    ship: {}, catalysts: [], craft: { crafting_level: 10, crafting_current_xp: 0, crafting_target_xp: 100 },
+    dust: 0, catalyst_parts: 0, quantum_cores: 10, credits: 1000,
+    commonResources: {}, rareCurrencies: {}, pets: { pets: [], slots: [] }, droids: [],
+    prices: {}, blueprints: [], materials: [], voyager: {}, lab: null, base: null, baseLab: null,
+    account: {}, dailyQuests: null, currentSystem: null, bookmarks: [],
+    gameVersion: "test", clientBundle: "test", skillLevels: {},
+    ssBattlingBoost: 0, ssBattlingBoostKnown: true, gatherLast: null, globalBoosts: {},
+    stateReadAt: Date.now(), player: { stats: null, skills: {}, clones: [] },
+  });
+
+  test("runs on a minimal state and returns the documented blocks", () => {
+    const r = core.analyze(minimalState());
+    for (const key of ["player", "gear", "warnings", "installs", "mergePlans", "inventory",
+                       "units", "tech", "pets", "materials", "shipItems", "lab", "base"]) {
+      assert.ok(key in r, "analyze() result is missing " + key);
+    }
+  });
+
+  test("an unhydrated store does not abort the whole analysis", () => {
+    // Collection-shaped fields are normalized at the entry point, so a store
+    // that arrives null (or as some other shape after a game update) costs
+    // that one section, not every tab.
+    for (const key of ["materials", "catalysts", "droids", "blueprints", "ship", "player", "craft"]) {
+      for (const bad of [null, undefined, {}, 0]) {
+        const st = minimalState();
+        st[key] = bad;
+        assert.doesNotThrow(() => core.analyze(st), key + " = " + JSON.stringify(bad));
+      }
+    }
+  });
+
+  test("a missing squadron boost marks the battle numbers untrusted", () => {
+    const st = minimalState();
+    st.ssBattlingBoostKnown = false;
+    assert.equal(core.analyze(st).battleTrusted, false);
+    assert.equal(core.analyze(minimalState()).battleTrusted, true);
+  });
+});

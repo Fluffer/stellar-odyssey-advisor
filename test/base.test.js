@@ -106,7 +106,8 @@ describe("BaseMath boost, output, upkeep, income", () => {
     assert.equal(BM.upkeepPerTick(200e6, 1, 0, 0, 0), 231481);
     assert.equal(BM.upkeepPerTick(200e6, 2, 0, 0, 0), 115740);
     near(BM.upkeepPerTick(200e6, 1, 100, 0, 0), 462962);
-    near(BM.upkeepPerTick(200e6, 1, 0, 0, 50), 115740.5);
+    // floored per module, exactly like the game's own accumulation
+    assert.equal(BM.upkeepPerTick(200e6, 1, 0, 0, 50), 115740);
     assert.equal(BM.upkeepPerTick(200e6, 0, 0, 0, 0), 0);
     near(BM.questsCoverage(5), 0.75);
     near(BM.questsCoverage(9), 0.75);
@@ -241,7 +242,12 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     // 7 passive modules at boost 50 + Quantum server and Laboratory enhancer at boost 25
     const expectedTick = 7 * BM.upkeepPerTick(200e6, 9, 50, 0, 0) + 2 * BM.upkeepPerTick(200e6, 9, 25, 0, 0);
     near(plan.upkeep.perTick, expectedTick);
-    near(plan.upkeep.perDay, expectedTick * 144);
+    // A module ticks hourly: the game's card counts "Next tick" down as
+    // 60 - tickCounter*10 minutes and labels this very amount "/h". 24 a day,
+    // NOT one per 10-minute worker run (that billed upkeep at 6x).
+    assert.equal(BM.TICKS_PER_DAY, 24);
+    near(plan.upkeep.perHour, expectedTick);
+    near(plan.upkeep.perDay, expectedTick * 24);
     near(plan.upkeep.coverage, 0.75);
     near(plan.upkeep.netPerDay, plan.upkeep.perDay * 0.25);
     near(plan.upkeep.shareOfIncome, plan.upkeep.perDay / 200e6);
@@ -285,12 +291,28 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     const inp = input();
     inp.founded = true;
     const miner = inp.modules.find(m => m.name === "Stellarium miner");
-    miner.unlocked = true; miner.level = 20; miner.tier = 2;
+    miner.unlocked = true; miner.active = true; miner.level = 20; miner.tier = 2;
     const plan = BM.planBase(inp);
     assert.equal(plan.upkeepNow.passiveCount, 1);
+    assert.equal(plan.upkeepNow.billedCount, 1);
     const expectedTick = BM.upkeepPerTick(200e6, 1, BM.moduleBoost({ ...miner, level: 20, tier: 2 }, 0), 0, 0);
     near(plan.upkeepNow.perTick, expectedTick);
     assert.notEqual(plan.upkeepNow.perTick, plan.upkeep.perTick, "upkeepNow (current levels) differs from upkeep (target levels)");
+  });
+
+  test("a switched-off passive module is unlocked but not billed", () => {
+    // The game divides by every unlocked passive module and sums only the
+    // ACTIVE ones, so turning one off is a real upkeep lever the advisor
+    // used to charge for anyway.
+    const inp = input();
+    inp.founded = true;
+    const miner = inp.modules.find(m => m.name === "Stellarium miner");
+    miner.unlocked = true; miner.active = false; miner.level = 20; miner.tier = 2;
+    const plan = BM.planBase(inp);
+    assert.equal(plan.upkeepNow.passiveCount, 1, "still counted in the divisor");
+    assert.equal(plan.upkeepNow.billedCount, 0, "but not billed");
+    assert.equal(plan.upkeepNow.perTick, 0);
+    assert.equal(plan.upkeepNow.perDay, 0);
   });
 
   test("buyFirst: only base-tier buildings that are actually short", () => {
