@@ -423,17 +423,17 @@ describe("voyager inherits the exploring profile of boost items", () => {
   test("the dust catalyst does NOT multiply expedition dust", () => {
     // Measured, not assumed. Expedition to Zilsynkyxbal on 2026-09-09:
     // K star (10) + 3 bodies (60) + 17,956.78 ly = raw 18,026.78, and the
-    // voyager paid 17,044 kept + 5,681 taxed = 22,725 gross. That is
-    // x1.2606, i.e. owl 14% x premium 10% = 1.254 and nothing more. Had the
-    // +54.9% cosmic dust catalyst applied it would have paid ~35,000.
-    // The game's "Exploring & Voyager" tab names the shared PROFILE; it does
-    // not mean the dust bonus reaches the expedition reward.
+    // voyager paid 17,044 kept + 5,681 taxed = 22,725 gross -- a multiplier
+    // of x1.2606, WITH a 20% reward bonus and 10% voyager tech already
+    // bought. The player's dust catalyst was +54.9%: applying it (even
+    // before the exploring skill) puts the floor above x1.9, half again the
+    // measured value. The "Exploring & Voyager" tab names the shared
+    // PROFILE; the dust bonus in it does not reach the expedition reward.
     const raw = 10 + 3 * 20 + 17956.78;
     const measured = (17044 + 5681) / raw;
-    assert.ok(Math.abs(measured - 1.14 * 1.10) < 0.01,
-      "owl x premium should explain the whole multiplier, got " + measured);
-    assert.ok(Math.abs(measured - 1.14 * 1.10 * 1.549) > 0.5,
-      "and the catalyst-inclusive model should be far off");
+    assert.ok(measured > 1.2 && measured < 1.35, "measured x" + measured);
+    assert.ok(measured < 1.14 * 1.10 * 1.549 * 0.7,
+      "must be far below any catalyst-inclusive model");
     assert.ok(!ACTIVITY_RELEVANT_STATS.voyager.includes("cosmic_dust_bonus"),
       "so cosmic_dust_bonus must not be listed as doing something on an expedition");
   });
