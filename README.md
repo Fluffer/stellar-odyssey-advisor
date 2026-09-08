@@ -39,7 +39,12 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   capped at 100%), expected droids alive per action vs the last real action, credits per
   +1% expected yield for each droid skill so you know which one to buy first, and the
   road to the no-mods end state: at which maneuverability each laser/probes dodge mod
-  can be recrafted into a single "Rare Resource drop chance" mod (+10 rare instead of +5)
+  can be recrafted into a single "Rare Resource drop chance" mod (+10 rare instead of +5).
+  A **cost emulator** per group answers "what does taking these to X% cost?": set a target
+  per skill (or all three at once) and it shows the cost for one individual unit and for
+  the whole group, the per-unit breakdown, the total against your credit pile, the highest
+  target your credits actually cover for each skill, and what a newly bought unit would
+  cost to buy and catch up to the same targets. Targets are remembered in the browser
 - **Technology** — all skills with costs, a battle-simulated ranking of the four combat
   skills (levels gained per quantum core), the optimal way to spend the cores you have,
   per-skill cores-to-max, and an account-wide max-out counter with a time-to-cover
@@ -198,6 +203,7 @@ old — see Requirements.
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
 | `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
+| `public/unit-math.js` | Shared droid/clone upgrade-cost math and the cost emulator, used by both the engine and the GUI |
 | `lib/income.js` | Observed income rate from the history log |
 | `check-page.js` | GUI file sanity checker |
 | `diagnose-connection.js` | Connection diagnostic (why "game not found") |

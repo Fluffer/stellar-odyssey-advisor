@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "pet-math.js", "lab-math.js", "base-math.js"]) {
+for (const f of ["app.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -52,9 +52,17 @@ try {
   fail("base-math.js does not load: " + e.message);
 }
 
+try {
+  const um = require(path.join(PUBLIC_DIR, "unit-math.js"));
+  if (typeof um.emulateGroup !== "function") throw new Error("emulateGroup missing");
+  console.log("  ok: unit-math.js loads as a module");
+} catch (e) {
+  fail("unit-math.js does not load: " + e.message);
+}
+
 // 3. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
-for (const ref of ["/style.css", "/pet-math.js", "/lab-math.js", "/base-math.js", "/app.js"]) {
+for (const ref of ["/style.css", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
   if (html.includes(ref)) console.log("  ok: index.html references " + ref);
   else fail("index.html does not reference " + ref);
 }

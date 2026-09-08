@@ -463,6 +463,9 @@ function computeMergeKeySet(data) {
 
 function fmtC(n) {
   if (n === null || n === undefined) return '?';
+  // Upgrade costs on the units tab run into the trillions; without a T step
+  // they read as a four-digit pile of "B".
+  if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
@@ -479,7 +482,7 @@ const SKILL_LABELS = {
 function renderUnits(u) {
   let html = '';
   html += '<h2>Droids &amp; clones</h2>';
-  html += '<div class="sub">Upgrade cost: 5000 &times; level &times; e^(0.15&times;level) credits per +0.1% step, per unit, per skill. New units start at 0%. Unit purchase price: 10New units start at 0%.</div>times; per unit, 8th = 100B (10^(n+3) credits).</div>';
+  html += '<div class="sub">Upgrade cost: 5000 &times; level &times; e^(0.15&times;level) credits per +0.1% step, per unit, per skill. New units start at 0%. Unit purchase price: 10&times; per unit, 8th = 100B (10^(n+3) credits).</div>';
   html += '<div class="cards">';
   html += card('Credits', fmtC(u.credits));
   const priceNote = g => ' <span style="font-size:11px;color:var(--dim)">next: ' + fmtC(g.nextPrice) +
@@ -580,8 +583,10 @@ function renderUnits(u) {
   };
   html += '<h2>Clone skills (' + u.clones.count + ')</h2><div class="sub">per-skill upgrade costs across all clones (apply-to-all)</div>';
   html += tableHtml('tbl-clone-skills', u.clones.rows, unitSkillColumns(true, false));
+  html += unitEmuSection('clones');
   html += '<h2>Droid skills (' + u.droids.count + ')</h2><div class="sub">per-skill upgrade costs across all droids (apply-to-all)</div>';
   html += tableHtml('tbl-droid-skills', u.droids.rows, unitSkillColumns(false, true));
+  html += unitEmuSection('droids');
 
   // --- unit lists ---
   const list = (title, units, skills) => {
@@ -596,6 +601,201 @@ function renderUnits(u) {
   html += list('Your clones', u.clones.list, ['critical_chance', 'critical_damage', 'dual_shot']);
   html += list('Your droids', u.droids.list, ['efficiency', 'storage', 'maneuverability']);
   return html;
+}
+
+// ---- droid / clone upgrade cost emulator ----
+// "What does it cost to take this group to X%?" - per individual unit and
+// for the whole group, for each of the three skills. All the money math is
+// window.UnitMath (public/unit-math.js), the same module the server-side
+// advisor uses, so the emulator charges exactly what the game charges.
+const UNIT_GROUP_SKILLS = {
+  droids: ['efficiency', 'storage', 'maneuverability'],
+  clones: ['critical_chance', 'critical_damage', 'dual_shot'],
+};
+const UNIT_GROUP_LABEL = { droids: 'Droid', clones: 'Clone' };
+const UNIT_EMU_KEY = 'advisor-unit-targets';
+
+function unitEmuStore() {
+  try {
+    const v = JSON.parse(localStorage.getItem(UNIT_EMU_KEY) || 'null');
+    if (v && typeof v === 'object') return v;
+  } catch (e) {}
+  return {};
+}
+function unitEmuSave(store) {
+  try { localStorage.setItem(UNIT_EMU_KEY, JSON.stringify(store)); } catch (e) {}
+}
+// Levels only ever sit on the game's 0.1 grid; keep targets there too.
+function unitEmuClamp(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return 0;
+  return Math.min(500, Math.max(0, Math.round(n * 10) / 10));
+}
+// Stored target, or a default of "5% above the highest unit" so the panel
+// opens on a meaningful number instead of a no-op.
+function unitEmuTarget(kind, skill, units) {
+  const stored = (unitEmuStore()[kind] || {})[skill];
+  if (typeof stored === 'number' && isFinite(stored)) return unitEmuClamp(stored);
+  const top = units.length ? Math.max.apply(null, units.map(u => u[skill] || 0)) : 0;
+  return unitEmuClamp(top + 5);
+}
+function setUnitEmuTarget(kind, skill, v) {
+  const store = unitEmuStore();
+  store[kind] = Object.assign({}, store[kind]);
+  store[kind][skill] = unitEmuClamp(v);
+  unitEmuSave(store);
+  drawUnitEmu(kind);
+}
+function setUnitEmuAll(kind, v) {
+  const store = unitEmuStore();
+  const t = unitEmuClamp(v);
+  store[kind] = {};
+  UNIT_GROUP_SKILLS[kind].forEach(s => { store[kind][s] = t; });
+  unitEmuSave(store);
+  drawUnitEmu(kind);
+}
+// Shift every target by `delta` from where it currently stands.
+function bumpUnitEmu(kind, delta) {
+  const units = unitEmuUnits(kind);
+  const store = unitEmuStore();
+  store[kind] = Object.assign({}, store[kind]);
+  UNIT_GROUP_SKILLS[kind].forEach(s => {
+    store[kind][s] = unitEmuClamp(unitEmuTarget(kind, s, units) + delta);
+  });
+  unitEmuSave(store);
+  drawUnitEmu(kind);
+}
+// Highest target the credit pile covers for ONE skill (spent on that skill
+// alone - the three "max" answers cannot all be bought together).
+function maxUnitEmu(kind, skill) {
+  const units = unitEmuUnits(kind);
+  const credits = (window.lastData && window.lastData.units ? window.lastData.units.credits : 0) || 0;
+  const best = window.UnitMath.maxAffordableTarget(units, skill, credits);
+  setUnitEmuTarget(kind, skill, best.target);
+}
+function resetUnitEmu(kind) {
+  const store = unitEmuStore();
+  delete store[kind];
+  unitEmuSave(store);
+  drawUnitEmu(kind);
+}
+function unitEmuUnits(kind) {
+  const u = window.lastData && window.lastData.units;
+  return (u && u[kind] && u[kind].list) ? u[kind].list : [];
+}
+function drawUnitEmu(kind) {
+  const el = document.getElementById('emu-' + kind);
+  if (el) el.innerHTML = unitEmuHtml(kind);
+}
+
+function unitEmuHtml(kind) {
+  const UM = window.UnitMath;
+  const u = window.lastData && window.lastData.units;
+  const units = unitEmuUnits(kind);
+  if (!UM || !units.length) return '<div class="empty-note">No ' + kind + ' in the last analysis.</div>';
+  const skills = UNIT_GROUP_SKILLS[kind];
+  const credits = u.credits || 0;
+  const targets = {};
+  skills.forEach(s => { targets[s] = unitEmuTarget(kind, s, units); });
+  const emu = UM.emulateGroup(units, skills, targets, credits);
+  const label = UNIT_GROUP_LABEL[kind] || kind;
+
+  // --- headline: what the whole plan costs against the credit pile ---
+  let html = '<div class="cards">';
+  html += card('All ' + units.length + ' ' + kind + ', all 3 skills',
+    '<span title="' + fmtN(emu.total) + ' credits">' + fmtC(emu.total) + '</span>');
+  html += card('Credits', fmtC(credits));
+  html += card(emu.affordable ? 'Left over' : 'Short by',
+    '<span style="color:' + (emu.affordable ? 'var(--good)' : 'var(--bad)') + '">' + fmtC(Math.abs(emu.leftover)) + '</span>' +
+    (credits > 0 ? '<span style="font-size:11px;color:var(--dim)"> plan = ' + Math.round(emu.total / credits * 100) + '% of credits</span>' : ''));
+  html += '</div>';
+
+  // --- controls ---
+  // The "all skills" box only shows a number when the three targets agree;
+  // otherwise it would claim a target two of the skills do not have.
+  const common = skills.every(s => targets[s] === targets[skills[0]]) ? String(targets[skills[0]]) : '';
+  html += '<div class="row" style="gap:14px">' +
+    '<span>Set every skill target to <input class="pet-input base-input" type="number" min="0" max="500" step="0.1" ' +
+    'value="' + common + '" placeholder="mixed" onchange="setUnitEmuAll(' + jsStr(kind) + ', this.value)">%</span>' +
+    '<span>' +
+    '<button class="ghost" onclick="bumpUnitEmu(' + jsStr(kind) + ', 1)">+1</button> ' +
+    '<button class="ghost" onclick="bumpUnitEmu(' + jsStr(kind) + ', 5)">+5</button> ' +
+    '<button class="ghost" onclick="bumpUnitEmu(' + jsStr(kind) + ', -1)">&minus;1</button> ' +
+    '<button class="ghost" onclick="resetUnitEmu(' + jsStr(kind) + ')">reset</button>' +
+    '</span></div>';
+
+  // --- per skill: cost for one unit and for the whole group ---
+  const skillRows = emu.bySkill.map(r => {
+    const paying = r.perUnit.filter(p => p.cost > 0).map(p => p.cost);
+    const levels = units.map(x => x[r.skill] || 0);
+    return {
+      skill: r.skill,
+      from: Math.min.apply(null, levels),
+      fromMax: Math.max.apply(null, levels),
+      target: r.target,
+      steps: Math.max.apply(null, r.perUnit.map(p => p.steps)),
+      one: paying.length ? Math.min.apply(null, paying) : 0,
+      oneMax: paying.length ? Math.max.apply(null, paying) : 0,
+      paying: paying.length,
+      total: r.total,
+      maxTarget: UM.maxAffordableTarget(units, r.skill, credits).target,
+    };
+  });
+  html += tableHtml('tbl-emu-' + kind, skillRows, [
+    { label: 'Skill', numeric: false, getValue: r => SKILL_LABELS[r.skill] || r.skill,
+      render: r => '<b>' + esc(SKILL_LABELS[r.skill] || r.skill) + '</b>' },
+    { label: 'Now', numeric: true, getValue: r => r.from,
+      render: r => (r.from === r.fromMax ? r.from + '%' : r.from + '&ndash;' + r.fromMax + '%') },
+    { label: 'Target', numeric: true, getValue: r => r.target,
+      render: r => '<input class="pet-input base-input" type="number" min="0" max="500" step="0.1" value="' + r.target +
+        '" onchange="setUnitEmuTarget(' + jsStr(kind) + ', ' + jsStr(r.skill) + ', this.value)">' +
+        ' <button class="ghost" style="padding:2px 8px;font-size:11px" title="Highest target these credits cover if every credit went into this one skill"' +
+        ' onclick="maxUnitEmu(' + jsStr(kind) + ', ' + jsStr(r.skill) + ')">max ' + r.maxTarget + '%</button>' },
+    { label: 'Steps', numeric: true, getValue: r => r.steps,
+      render: r => r.steps ? '+' + (r.steps / 10).toFixed(1) + '%' : '&mdash;' },
+    { label: 'Cost, one unit', numeric: true, getValue: r => r.one,
+      render: r => !r.paying ? '<span style="color:var(--dim)">at target</span>'
+        : (r.one === r.oneMax ? '<span title="' + fmtN(r.one) + '">' + fmtC(r.one) + '</span>'
+          : fmtC(r.one) + '&ndash;' + fmtC(r.oneMax)) },
+    { label: 'Cost, all ' + units.length, numeric: true, getValue: r => r.total,
+      render: r => r.total ? '<b title="' + fmtN(r.total) + '">' + fmtC(r.total) + '</b>' : '<span style="color:var(--dim)">&mdash;</span>' },
+    { label: '% of credits', numeric: true, getValue: r => r.total,
+      render: r => credits > 0 ? (r.total / credits * 100).toFixed(1) + '%' : '?' },
+  ]);
+
+  // --- per unit: what each individual one costs to reach those targets ---
+  const unitCols = [
+    { label: label, numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' },
+  ].concat(skills.map(s => ({
+    label: SKILL_LABELS[s] || s, numeric: true, getValue: r => r.costs[s],
+    render: r => r.costs[s] ? '<span title="' + fmtN(r.costs[s]) + '">' + fmtC(r.costs[s]) + '</span>'
+      : '<span style="color:var(--dim)">&mdash;</span>',
+  }))).concat([
+    { label: 'Unit total', numeric: true, getValue: r => r.total,
+      render: r => r.total ? '<b title="' + fmtN(r.total) + '">' + fmtC(r.total) + '</b>' : '<span style="color:var(--dim)">&mdash;</span>' },
+  ]);
+  html += '<div class="sub" style="margin:14px 0 4px">Per unit &mdash; each one pays its own way up from where it stands, so a unit already at the target pays nothing.</div>';
+  html += tableHtml('tbl-emu-units-' + kind, emu.perUnit, unitCols);
+
+  // --- buying one more and catching it up to the same targets ---
+  const price = u[kind].nextPrice;
+  if (price !== null && price !== undefined) {
+    const catchUp = skills.reduce((s, sk) => s + UM.cumulativeUnitCost(0, targets[sk]), 0);
+    html += '<div class="list" style="margin-top:10px"><div class="row"><span>' +
+      'An extra <b>' + (units.length + 1) + 'th ' + label.toLowerCase() + '</b> at these same targets: <b>' + fmtC(price) +
+      '</b> purchase + <b>' + fmtC(catchUp) + '</b> to bring a 0% unit up = <b style="color:var(--warn)">' + fmtC(price + catchUp) + '</b>' +
+      ' <span style="color:var(--dim)">(against ' + fmtC(emu.total) + ' to lift the ' + units.length + ' you already own)</span>' +
+      '</span></div></div>';
+  }
+  return html;
+}
+
+function unitEmuSection(kind) {
+  const label = UNIT_GROUP_LABEL[kind] || kind;
+  return '<h2>' + label + ' cost emulator</h2>' +
+    '<div class="sub">Set a target % per skill and see what it costs, per individual unit and for the whole group. ' +
+    'Each +0.1% step costs 5000 &times; level &times; e^(0.15&times;level) credits, charged per unit and per skill, so the cost climbs steeply with level. Targets are remembered in this browser.</div>' +
+    '<div id="emu-' + kind + '">' + unitEmuHtml(kind) + '</div>';
 }
 
 // Time to earn the remaining cores for maxing every unlocked skill, from
