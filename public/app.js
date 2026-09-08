@@ -129,6 +129,25 @@ function catIcon(stat, rarity, range, small) {
     (range === undefined || range === null ? '' : '<span class="rng">' + esc(range) + '</span>') +
     '</span>';
 }
+// Material and resource icons. The game's symbol ids and the engine's material
+// names differ only in separators ("warp capsule" vs warp_capsule), so try the
+// obvious spellings and fall back to no icon at all -- a missing material icon
+// should cost the row nothing, unlike a catalyst where the tile IS the row.
+function matIconId(name) {
+  if (!window.__iconIds) return null;
+  const raw = String(name || '');
+  for (const cand of [raw, raw.toLowerCase().replace(/\s+/g, '_'),
+                      raw.toLowerCase().replace(/[\s_-]+/g, '')]) {
+    if (window.__iconIds.has(cand)) return cand;
+  }
+  return null;
+}
+function matIcon(name) {
+  const id = window.__iconsReady ? matIconId(name) : null;
+  if (!id) return '';
+  return '<span class="mat-tile"><svg aria-hidden="true"><use href="#' + esc(id) + '"></use></svg></span>';
+}
+
 function loadIcons() {
   return fetch('/icons.svg').then(r => (r.ok ? r.text() : null)).then(svg => {
     if (!svg) return;
@@ -525,8 +544,10 @@ function renderMerges(plans, player, reqs, doneSet, prevKeys) {
       reqs.map(m => t('merges.tier_req_item', {rarity: esc(rarityLabel(m.rarity)), n: m.resultNeeded})).join(' &middot; ')}) + '</div>';
   }
   for (const p of plans) {
-    html += '<div class="merge-plan"><h3>' + esc(statLabel(p.stat)) + ' <span style="color:var(--dim)">(' + esc(actLabel(p.activity)) + ')</span>' +
-      (p.chainGoal ? ' &mdash; ' + t('merges.goal', {goal: '<span style="color:var(--warn)">&rarr; ' + chainGoalText(p.chainGoal) + '</span>'}) : '') + '</h3>';
+    const endTier = p.steps.length ? p.steps[p.steps.length - 1].to : null;
+    html += '<div class="merge-plan"><h3><span class="inv-stat">' + catIcon(p.stat, endTier, null, true) +
+      '<span>' + esc(statLabel(p.stat)) + ' <span style="color:var(--dim)">(' + esc(actLabel(p.activity)) + ')</span>' +
+      (p.chainGoal ? ' &mdash; ' + t('merges.goal', {goal: '<span style="color:var(--warn)">&rarr; ' + chainGoalText(p.chainGoal) + '</span>'}) : '') + '</span></span></h3>';
     for (const step of p.steps) {
       const sameTier = step.from === step.to ? t('merges.range_perfection') : '';
       html += '<div class="step"><div class="head"><b>' + esc(rarityLabel(step.from)) + ' &rarr; ' + esc(rarityLabel(step.to)) + sameTier + '</b>' +
@@ -1273,7 +1294,8 @@ function renderInventory(inv) {
 // ---- Materials tab: blueprint material requirements vs stock ----
 function materialCols(showFarm) {
   const cols = [
-    { label: t('mat.col_material'), numeric: false, getValue: r => r.material, render: r => '<b>' + esc(materialLabel(r.material)) + '</b>' },
+    { label: t('mat.col_material'), numeric: false, getValue: r => r.material,
+      render: r => '<span class="inv-stat">' + matIcon(r.material) + '<b>' + esc(materialLabel(r.material)) + '</b></span>' },
     { label: t('mat.col_stock'), numeric: true, getValue: r => r.stock, render: r => r.stock.toLocaleString() },
     { label: t('mat.col_need_per_craft'), numeric: true, getValue: r => r.neededPerCraftAll, render: r => r.neededPerCraftAll.toLocaleString() },
     { label: t('mat.col_need_all_uses'), numeric: true, getValue: r => r.neededAllUses, render: r => r.neededAllUses.toLocaleString() },
@@ -1408,7 +1430,8 @@ function renderLab(lab) {
   // --- raw currencies ---
   html += '<h2>' + t('lab.raw_resources') + '</h2>';
   html += tableHtml('tbl-lab-raw', plan.raw, [
-    { label: t('lab.col_resource'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(materialLabel(r.name)) + '</b>' },
+    { label: t('lab.col_resource'), numeric: false, getValue: r => r.name,
+      render: r => '<span class="inv-stat">' + matIcon(r.name) + '<b>' + esc(materialLabel(r.name)) + '</b></span>' },
     { label: t('lab.col_needed'), numeric: true, getValue: r => r.needed, render: r => fmtC(r.needed) },
     { label: t('lab.col_stock'), numeric: true, getValue: r => r.stock, render: r => fmtC(r.stock) },
     { label: t('lab.col_coverage'), numeric: true, getValue: r => r.coverage, render: r => covBar(r.coverage) + (r.coverage * 100).toFixed(0) + '%' },
@@ -1638,7 +1661,8 @@ function renderBase(b) {
   html += '<div class="sub">' + t('base.stockpile_note') + '</div>';
   if (plan.buyFirst.length) html += '<div class="sub" style="color:var(--warn)">' + t('base.buy_first', { list: plan.buyFirst.map(n => esc(moduleLabel(n))).join(', ') }) + '</div>';
   html += tableHtml('tbl-base-stock', plan.stockpile, [
-    { label: t('base.col_material'), numeric: false, getValue: r => r.material, render: r => '<b>' + esc(materialLabel(r.material)) + '</b>' },
+    { label: t('base.col_material'), numeric: false, getValue: r => r.material,
+      render: r => '<span class="inv-stat">' + matIcon(r.material) + '<b>' + esc(materialLabel(r.material)) + '</b></span>' },
     { label: t('base.col_needed'), numeric: true, getValue: r => r.needed, render: r => fmtN(r.needed) },
     { label: t('base.col_stock'), numeric: true, getValue: r => r.stock, render: r => fmtN(r.stock) },
     { label: t('common.short'), numeric: true, getValue: r => r.short, render: r => r.short > 0 ? '<span style="color:var(--bad)">' + fmtN(r.short) + '</span>' : '<span style="color:var(--good)">0</span>' },

@@ -94,6 +94,26 @@ if (I18N) {
   if (r.unused.length) console.log("  note: " + r.unused.length + " catalogue keys are not referenced: " + r.unused.slice(0, 8).join(", ") + (r.unused.length > 8 ? " ..." : ""));
 }
 
+// Catalyst/material icons are optional game artwork extracted by
+// extract-icons.js into public/icons.svg (gitignored). Report what is there:
+// after a game update the sprite filename changes and it must be re-run, and
+// a stat with no icon silently falls back to a coloured dot.
+const ICONS = path.join(PUBLIC_DIR, "icons.svg");
+if (!fs.existsSync(ICONS)) {
+  console.log("  note: public/icons.svg missing - icons fall back to dots. " +
+    "Run: node extract-icons.js");
+} else {
+  const svg = fs.readFileSync(ICONS, "utf8");
+  const ids = new Set([...svg.matchAll(/<symbol[^>]*id="([^"]+)"/g)].map(m => m[1]));
+  const stats = Object.keys(require("./lib/constants.js").STAT_BASES || {});
+  const noIcon = stats.filter(st => !ids.has("catalyst_" + st));
+  console.log("  ok: icons.svg has " + ids.size + " icons (" +
+    (Math.round(svg.length / 1024)) + " KB)");
+  if (stats.length && noIcon.length)
+    console.log("  note: no icon for " + noIcon.join(", ") +
+      " - re-run extract-icons.js after a game update");
+}
+
 // 4. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
 for (const ref of ["/style.css", "/i18n.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {

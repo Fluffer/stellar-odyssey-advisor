@@ -67,21 +67,49 @@ if (!sprite) fail("no icons_sprite-*.svg in the archive (did the game update cha
 const svg = read(sprite).toString("utf8");
 console.log("found " + sprite.path + " (" + (svg.length / 1024 / 1024).toFixed(1) + " MB)");
 
-// Only the catalyst stat icons, which is what the advisor displays. Each is a
-// self-contained <symbol> with no url(#..) or href references out of itself.
-const symbols = [];
-for (const m of svg.matchAll(/<symbol\b[^>]*\bid="(catalyst_[^"]+)"[^>]*>/g)) {
+// Pull out only what the advisor displays, so the sprite stays ~100 KB rather
+// than the game's 2.7 MB. Each symbol is self-contained: no url(#..) and no
+// href references out of itself, verified across the set.
+const all = new Map();
+for (const m of svg.matchAll(/<symbol\b[^>]*\bid="([^"]+)"[^>]*>/g)) {
   const start = m.index;
   const end = svg.indexOf("</symbol>", start);
-  if (end < 0) continue;
-  symbols.push({ id: m[1], xml: svg.slice(start, end + "</symbol>".length) });
+  if (end >= 0) all.set(m[1], svg.slice(start, end + "</symbol>".length));
 }
+
+const symbols = [];
+for (const [id, xml] of all) if (id.startsWith("catalyst_")) symbols.push({ id, xml });
 if (!symbols.length) fail("no catalyst_* symbols found in the sprite");
+
+// Materials and resources: rather than hardcode a list that drifts, take the
+// vocabulary the GUI already knows (the material.* keys in the catalogue) and
+// keep whichever of them the game ships an icon for. The two spell names
+// differently only in spacing, so match on a normalised form.
+const norm = x => String(x).toLowerCase().replace(/[\s_-]+/g, "");
+const byNorm = new Map();
+for (const id of all.keys()) if (!byNorm.has(norm(id))) byNorm.set(norm(id), id);
+
+let materials = 0;
+const missing = [];
+try {
+  const I18n = require(path.join(__dirname, "public", "i18n.js"));
+  const names = Object.keys(I18n.CATALOG.en)
+    .filter(k => k.startsWith("material."))
+    .map(k => k.slice("material.".length));
+  for (const name of names) {
+    const id = byNorm.get(norm(name));
+    if (!id) { missing.push(name); continue; }
+    if (!symbols.some(sym => sym.id === id)) { symbols.push({ id, xml: all.get(id) }); materials++; }
+  }
+} catch (e) {
+  console.error("  note: could not read the material vocabulary (" + e.message + ")");
+}
+if (missing.length) console.log("  no icon in the game for: " + missing.join(", "));
 
 const out = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">\n' +
   symbols.map(s => s.xml).join("\n") + "\n</svg>\n";
 const dest = path.join(__dirname, "public", "icons.svg");
 fs.writeFileSync(dest, out);
-console.log("wrote public/icons.svg — " + symbols.length + " icons, " +
+console.log("wrote public/icons.svg — " + symbols.length + " icons (" +
+  (symbols.length - materials) + " catalyst stats, " + materials + " materials), " +
   (out.length / 1024).toFixed(0) + " KB");
-console.log("  " + symbols.map(s => s.id.replace("catalyst_", "")).join(", "));
