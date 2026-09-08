@@ -141,3 +141,8 @@
 .card input[type=number], .toolbar input[type=number] { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
 /* Auto-refresh interval: wide enough for 4 digits, no more. */
 .toolbar input[type=number] { width: 46px; text-align: right; }
+
+/* Language switch in the toolbar (English / Chinese). */
+#lang, #lang option { background: var(--panel2); color: var(--text); }
+#lang { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; cursor: pointer; }

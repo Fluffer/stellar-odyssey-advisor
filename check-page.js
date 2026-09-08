@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"]) {
+for (const f of ["app.js", "i18n.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -60,9 +60,43 @@ try {
   fail("unit-math.js does not load: " + e.message);
 }
 
-// 3. index.html must reference the stylesheet and all scripts.
+let I18N = null;
+try {
+  I18N = require(path.join(PUBLIC_DIR, "i18n.js"));
+  if (typeof I18N.t !== "function") throw new Error("t missing");
+  console.log("  ok: i18n.js loads as a module");
+} catch (e) {
+  fail("i18n.js does not load: " + e.message);
+}
+
+// 3. Every t("key") the GUI calls must exist in the English catalogue, and
+// every English key must have a Chinese translation. A typo'd key renders as
+// the raw key text on the page, which is easy to miss by eye.
+if (I18N) {
+  const { scan } = require("./lib/i18n-scan.js");
+  const sources = ["app.js", "index.html"]
+    .map(f => fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8"));
+  const r = scan(sources, I18N.CATALOG.en);
+
+  if (r.unknown.length) fail("keys used but not in the English catalogue: " + r.unknown.join(", "));
+  else console.log("  ok: all " + r.used.size + " i18n keys used by the GUI exist");
+
+  if (r.emptyPrefixes.length) fail("key prefixes the code builds on but the catalogue never fills: " + r.emptyPrefixes.join(", "));
+  else if (r.prefixes.size) console.log("  ok: " + r.prefixes.size + " concatenated key prefixes resolve (" + [...r.prefixes].join(", ") + ")");
+
+  const untranslated = I18N.missing("zh");
+  if (untranslated.length) fail("English keys with no Chinese translation: " + untranslated.join(", "));
+  else console.log("  ok: all " + Object.keys(I18N.CATALOG.en).length + " keys are translated to zh");
+
+  const stale = I18N.extra("zh");
+  if (stale.length) fail("Chinese keys with no English original: " + stale.join(", "));
+
+  if (r.unused.length) console.log("  note: " + r.unused.length + " catalogue keys are not referenced: " + r.unused.slice(0, 8).join(", ") + (r.unused.length > 8 ? " ..." : ""));
+}
+
+// 4. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
-for (const ref of ["/style.css", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
+for (const ref of ["/style.css", "/i18n.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
   if (html.includes(ref)) console.log("  ok: index.html references " + ref);
   else fail("index.html does not reference " + ref);
 }

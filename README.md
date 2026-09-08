@@ -133,10 +133,37 @@ stale) until you analyze fresh; if auto-refresh was left on, that snapshot's age
 towards the interval, so reopening the page only analyzes straight away when one was
 already due.
 
+### Language
+
+The GUI ships in **English and Simplified Chinese**. The selector in the toolbar switches
+between them instantly — no reload, no re-analysis — and the choice is remembered in
+`localStorage` (`advisor-lang`). A browser whose language starts with `zh` opens in
+Chinese by default; everything else opens in English.
+
+Every user-facing string lives in `public/i18n.js` as a key in two catalogues, looked up
+by `t('key')` at render time. Numbers are deliberately *not* re-localised: `1,234,567`
+grouping and the `K`/`M`/`B`/`T` suffixes stay the same in both languages, because they
+are read side by side with the game's own figures. `node check-page.js` fails if the GUI
+uses a key that no catalogue defines, or if an English string has no Chinese translation.
+
+The Chinese wording follows **the game's own `zh-CN` locale**, not a fresh translation:
+the game ships English, Spanish and Simplified Chinese catalogues in its bundle, and the
+advisor's game-domain vocabulary (rarities, currencies, activities, ship slots, base
+modules, materials) was taken from there so the two screens read the same. Where the
+game's own Chinese is inconsistent — Stellarium appears as 星辰矿石, 星晶 and 星辉晶 in
+different panels — the advisor uses the name of the thing itself. Advisor-only concepts
+that the game has no term for (the upgrade-cost emulator, the snapshot history, the
+win-rate probe metric) are translated on their own.
+
+Adding a third language means adding one catalogue object to `public/i18n.js`, listing it
+in `LANGS`/`LANG_NAMES`, and adding an `<option>` in `public/index.html`.
+
 ### Extras
 
-- `node check-page.js` — sanity check: syntax-checks the GUI scripts in `public/` and
-  verifies `index.html` references them (useful after editing the GUI code)
+- `node check-page.js` — sanity check: syntax-checks the GUI scripts in `public/`,
+  verifies `index.html` references them, and checks the i18n catalogues (every key the
+  GUI uses exists, every English string is translated, no stale translations) — useful
+  after editing the GUI code
 - `node diagnose-connection.js` — walks every stage of the connection to the game and
   reports which stage fails and how to fix it (see below)
 
@@ -210,6 +237,7 @@ old — see Requirements.
 | `public/index.html` | GUI page skeleton |
 | `public/style.css` | GUI styles |
 | `public/app.js` | GUI client-side rendering and the pet simulator |
+| `public/i18n.js` | GUI string catalogue (English + Simplified Chinese) and the `t()` lookup runtime |
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
 | `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |

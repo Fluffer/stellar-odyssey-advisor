@@ -1,56 +1,65 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Stellar Odyssey Advisor</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <h1>Stellar Odyssey Advisor</h1>
-  <div class="sub">Gear, catalyst and merge analysis &mdash; read-only</div>
+  <h1 data-i18n="app.title">Stellar Odyssey Advisor</h1>
+  <div class="sub" data-i18n-html="app.subtitle">Gear, catalyst and merge analysis &mdash; read-only</div>
 
   <div class="sticky-header">
     <div class="toolbar">
-      <button id="refresh" onclick="refresh()">Analyze now</button>
+      <button id="refresh" onclick="refresh()" data-i18n="app.analyze_now">Analyze now</button>
       <label style="color:var(--dim);font-size:12px">
-        <input type="checkbox" id="auto" onchange="toggleAuto(this.checked)"> auto every
+        <input type="checkbox" id="auto" onchange="toggleAuto(this.checked)">
+        <span data-i18n="app.auto_every">auto every</span>
         <input type="number" id="autoMins" min="1" max="1440" step="1" value="60"
+               data-i18n-title="app.auto_title"
                title="Minutes between automatic analyses (1-1440)"
-               onchange="setAutoMins(this.value)"> min
+               onchange="setAutoMins(this.value)">
+        <span data-i18n="app.auto_min">min</span>
       </label>
+      <select id="lang" data-i18n-title="app.language" title="Language"
+              onchange="I18n.setLang(this.value)">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+      </select>
       <span id="status"></span>
     </div>
 
     <div class="cards" id="summary"></div>
     <div class="maintabs">
-      <button data-tab="gear" class="ghost" onclick="setTab('gear')">Gear</button>
-      <button data-tab="battle" class="ghost" onclick="setTab('battle')">Stats</button>
-      <button data-tab="installs" class="ghost" onclick="setTab('installs')">Installs</button>
-      <button data-tab="merges" class="ghost" onclick="setTab('merges')">Merges</button>
-      <button data-tab="units" class="ghost" onclick="setTab('units')">Droids &amp; Clones</button>
-      <button data-tab="tech" class="ghost" onclick="setTab('tech')">Technology</button>
-      <button data-tab="pets" class="ghost" onclick="setTab('pets')">Pets</button>
-      <button data-tab="inventory" class="ghost" onclick="setTab('inventory')">Inventory</button>
-      <button data-tab="materials" class="ghost" onclick="setTab('materials')">Materials</button>
-      <button data-tab="lab" class="ghost" onclick="setTab('lab')">Lab</button>
-      <button data-tab="base" class="ghost" onclick="setTab('base')">Base</button>
-      <button data-tab="history" class="ghost" onclick="setTab('history')">History</button>
+      <button data-tab="gear" class="ghost" onclick="setTab('gear')" data-i18n-html="tab.gear">Gear</button>
+      <button data-tab="battle" class="ghost" onclick="setTab('battle')" data-i18n-html="tab.battle">Stats</button>
+      <button data-tab="installs" class="ghost" onclick="setTab('installs')" data-i18n-html="tab.installs">Installs</button>
+      <button data-tab="merges" class="ghost" onclick="setTab('merges')" data-i18n-html="tab.merges">Merges</button>
+      <button data-tab="units" class="ghost" onclick="setTab('units')" data-i18n-html="tab.units">Droids &amp; Clones</button>
+      <button data-tab="tech" class="ghost" onclick="setTab('tech')" data-i18n-html="tab.tech">Technology</button>
+      <button data-tab="pets" class="ghost" onclick="setTab('pets')" data-i18n-html="tab.pets">Pets</button>
+      <button data-tab="inventory" class="ghost" onclick="setTab('inventory')" data-i18n-html="tab.inventory">Inventory</button>
+      <button data-tab="materials" class="ghost" onclick="setTab('materials')" data-i18n-html="tab.materials">Materials</button>
+      <button data-tab="lab" class="ghost" onclick="setTab('lab')" data-i18n-html="tab.lab">Lab</button>
+      <button data-tab="base" class="ghost" onclick="setTab('base')" data-i18n-html="tab.base">Base</button>
+      <button data-tab="history" class="ghost" onclick="setTab('history')" data-i18n-html="tab.history">History</button>
     </div>
   </div>
 
-  <div id="content"><div class="empty-note">Click "Analyze now" (game must be running).</div></div>
+  <div id="content"><div class="empty-note" data-i18n="app.empty_note">Click "Analyze now" (game must be running).</div></div>
 
   <div class="legend">
-    <span style="--c:var(--rarity-normal)">normal</span>
-    <span style="--c:var(--rarity-uncommon)">uncommon</span>
-    <span style="--c:var(--rarity-rare)">rare</span>
-    <span style="--c:var(--rarity-unique)">unique</span>
-    <span style="--c:var(--rarity-epic)">epic</span>
-    <span style="--c:var(--rarity-legendary)">legendary</span>
-    <span style="--c:#666">(halved) = 2nd same stat in one group, counts 50%</span>
+    <span style="--c:var(--rarity-normal)" data-i18n="rarity.normal">normal</span>
+    <span style="--c:var(--rarity-uncommon)" data-i18n="rarity.uncommon">uncommon</span>
+    <span style="--c:var(--rarity-rare)" data-i18n="rarity.rare">rare</span>
+    <span style="--c:var(--rarity-unique)" data-i18n="rarity.unique">unique</span>
+    <span style="--c:var(--rarity-epic)" data-i18n="rarity.epic">epic</span>
+    <span style="--c:var(--rarity-legendary)" data-i18n="rarity.legendary">legendary</span>
+    <span style="--c:#666" data-i18n="legend.halved">(halved) = 2nd same stat in one group, counts 50%</span>
   </div>
-  <div class="sub" style="margin-top:6px">keys 1-9, 0, - switch tabs &middot; r = analyze</div>
+  <div class="sub" style="margin-top:6px" data-i18n-html="app.shortcuts">keys 1-9, 0, - switch tabs &middot; r = analyze</div>
 
+<script src="/i18n.js"></script>
 <script src="/pet-math.js"></script>
 <script src="/lab-math.js"></script>
 <script src="/base-math.js"></script>
