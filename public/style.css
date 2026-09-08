@@ -2,8 +2,18 @@
     --bg: #0d1117; --panel: #161b27; --panel2: #1c2333;
     --border: #2a3348; --text: #d6dce8; --dim: #8b94a7;
     --accent: #5aa2ff; --good: #3ecf6f; --warn: #e0b23c; --bad: #e05b5b;
-    --rarity-normal:#9aa4b5; --rarity-uncommon:#4fc36a; --rarity-rare:#4f9cf5;
-    --rarity-unique:#a06cf0; --rarity-epic:#e0863c; --rarity-legendary:#e0b23c;
+    /* Rarity palette, taken from the game's own stylesheet so the two screens
+       agree: .text-<rarity> gives the text colour, .<rarity> the chip
+       background and border. Note the game does NOT use the usual
+       green/blue/purple ramp -- rare is gold and legendary is violet. */
+    --rarity-normal:#cdd7e4; --rarity-uncommon:#7ddef6; --rarity-rare:#d8a31d;
+    --rarity-unique:#ff9242; --rarity-epic:#fd6cb0; --rarity-legendary:#b85ffd;
+    --rarity-bg-normal:#233142;   --rarity-bd-normal:#476285;
+    --rarity-bg-uncommon:#335e687d; --rarity-bd-uncommon:#41717c;
+    --rarity-bg-rare:#8a720931;   --rarity-bd-rare:#787a3f;
+    --rarity-bg-unique:#a35f2f40; --rarity-bd-unique:#a35f2f;
+    --rarity-bg-epic:#4b113a88;   --rarity-bd-epic:#873c5e;
+    --rarity-bg-legendary:#3b0f5c7a; --rarity-bd-legendary:#66219b;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text);
@@ -146,3 +156,16 @@
 #lang, #lang option { background: var(--panel2); color: var(--text); }
 #lang { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
   font-size: 12px; cursor: pointer; }
+
+/* Catalyst icon tiles, matching the game's install dialog: a rarity-tinted
+   square holding the stat's hexagonal icon, with the range in the corner.
+   The icons come from public/icons.svg, which extract-icons.js pulls out of
+   your own game install; without that file catIcon() falls back to a dot. */
+.cat-tile { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 6px; flex: none; vertical-align: middle; }
+.cat-tile svg { width: 26px; height: 26px; display: block; }
+.cat-tile .rng { position: absolute; right: -2px; bottom: -3px; font-size: 9px; font-weight: 700;
+  line-height: 1; padding: 1px 3px; border-radius: 3px; background: var(--bg); color: var(--text); }
+.cat-tile.sm { width: 22px; height: 22px; border-radius: 4px; }
+.cat-tile.sm svg { width: 17px; height: 17px; }
+.inv-stat { display: flex; align-items: center; gap: 9px; }

@@ -103,10 +103,43 @@ function setTabCount(tab, n, tint) {
   span.classList.toggle('bad', !!tint);
 }
 
-function dotColor(r) {
-  const m = { normal:'#9aa4b5', uncommon:'#4fc36a', rare:'#4f9cf5',
-    unique:'#a06cf0', epic:'#e0863c', legendary:'#e0b23c' };
-  return m[r] || '#888';
+const RARITIES = ['normal', 'uncommon', 'rare', 'unique', 'epic', 'legendary'];
+// The palette lives in style.css as --rarity-* (taken from the game's own
+// stylesheet). Returning the variable rather than a literal keeps ONE source
+// of truth -- this used to be a second, different hardcoded palette.
+function dotColor(r) { return RARITIES.includes(r) ? 'var(--rarity-' + r + ')' : '#888'; }
+function rarityBg(r) { return RARITIES.includes(r) ? 'var(--rarity-bg-' + r + ')' : 'var(--panel2)'; }
+function rarityBorder(r) { return RARITIES.includes(r) ? 'var(--rarity-bd-' + r + ')' : 'var(--border)'; }
+
+// ---- catalyst stat icons -------------------------------------------------
+// public/icons.svg holds the game's own <symbol> for each catalyst stat,
+// extracted from the local install by extract-icons.js. It is loaded once and
+// injected into the page, so <use href="#id"> resolves same-document (an
+// external-file reference does not work in every browser). Until it loads --
+// and forever, if the file was never extracted -- catIcon falls back to the
+// coloured dot, so the GUI never depends on game artwork being present.
+window.__iconsReady = false;
+function catIcon(stat, rarity, range, small) {
+  const tile = 'background:' + rarityBg(rarity) + ';border:1px solid ' + rarityBorder(rarity);
+  if (!window.__iconsReady || !window.__iconIds || !window.__iconIds.has('catalyst_' + stat)) {
+    return '<span class="dot" style="background:' + dotColor(rarity) + '"></span>';
+  }
+  return '<span class="cat-tile' + (small ? ' sm' : '') + '" style="' + tile + '">' +
+    '<svg aria-hidden="true"><use href="#catalyst_' + esc(stat) + '"></use></svg>' +
+    (range === undefined || range === null ? '' : '<span class="rng">' + esc(range) + '</span>') +
+    '</span>';
+}
+function loadIcons() {
+  return fetch('/icons.svg').then(r => (r.ok ? r.text() : null)).then(svg => {
+    if (!svg) return;
+    const holder = document.createElement('div');
+    holder.style.display = 'none';
+    holder.innerHTML = svg;
+    document.body.insertBefore(holder, document.body.firstChild);
+    window.__iconIds = new Set(Array.from(holder.querySelectorAll('symbol')).map(n => n.id));
+    window.__iconsReady = true;
+    if (window.lastData) render(window.lastData);
+  }).catch(() => {});
 }
 // Looked up per call, not frozen at load: the language can change after load.
 // Anything the game invents that we do not know a label for falls back to the
@@ -295,7 +328,7 @@ function renderGear(gear) {
         const cls = g.filled === 0 ? 'b-empty' : (full ? 'b-ok' : 'b-warn');
         html += '<span class="badge ' + cls + '">' + g.filled + '/' + g.slots + '</span></div>';
         for (const c of g.catalysts) {
-          html += '<div class="cat"><span class="dot" style="background:' + dotColor(c.rarity) + '"></span>';
+          html += '<div class="cat">' + catIcon(c.stat, c.rarity, null, true);
           html += '<span class="rar" style="color:' + dotColor(c.rarity) + '">' + esc(statLabel(c.stat)) + '</span>';
           html += '<span>' + c.range + '%</span>';
           if (c.halved) html += '<span style="color:var(--dim)">' + t('gear.halved') + '</span>';
@@ -1219,11 +1252,11 @@ function renderInventory(inv) {
 
   const cols = [
     { label: t('inv.col_stat'), numeric: false, getValue: it => it.stat,
-      render: it => '<b>' + esc(statLabel(it.stat).replaceAll('_', ' ')) + '</b>' },
+      render: it => '<span class="inv-stat">' + catIcon(it.stat, it.rarity, it.range) +
+        '<b>' + esc(statLabel(it.stat).replaceAll('_', ' ')) + '</b></span>' },
     { label: t('inv.col_rarity'), numeric: false, getValue: it => it.rarity,
-      render: it => '<span class="dot" style="background:' + dotColor(it.rarity) +
-        ';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px"></span>' +
-        '<span style="color:' + dotColor(it.rarity) + '">' + esc(rarityLabel(it.rarity)) + '</span>' },
+      render: it => '<span style="color:' + dotColor(it.rarity) + ';font-weight:600">' +
+        esc(rarityLabel(it.rarity)) + '</span>' },
     { label: t('inv.col_range'), numeric: true, getValue: it => it.range, render: it => it.range + '%' },
     { label: t('inv.col_activity'), numeric: false, getValue: it => it.activity, render: it => esc(actLabel(it.activity)) },
     { label: t('inv.col_category'), numeric: false, getValue: it => it.category, render: it => esc(statCatLabel(it.category)) },
@@ -1971,6 +2004,10 @@ document.addEventListener('keydown', function (e) {
     refresh();
   }
 });
+
+// The catalyst icons are optional artwork: fetch them once, and re-render if
+// they arrive after the first paint.
+loadIcons();
 
 // ---- language ----
 // i18n.js has already picked the catalogue (stored preference, else the
