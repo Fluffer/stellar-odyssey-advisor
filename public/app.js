@@ -152,6 +152,18 @@ function bodyLabel(b) { return engLookup('body.', b); }
 function techNameLabel(key, raw) { return engLookup('techname.', key, raw); }
 function techBoostLabel(key) { return engLookup('techboost.', key, String(key).replaceAll('_', ' ')); }
 function techDescLabel(key, raw) { return engLookup('techskill.', key, raw); }
+// Game proper nouns the engine carries as data. Same rules as above: looked
+// up per call, keyed by the value exactly as the engine emits it, and any
+// name the catalogue does not know (a material or module a patch adds, a
+// named pet like Korin) renders as it arrives.
+function materialLabel(m) { return engLookup('material.', m); }
+// Base modules AND laboratory buildings: one vocabulary of built things.
+// Only the printed name is translated - base-math.js keeps keying levels,
+// prerequisites and the stored target boxes by the English name.
+function moduleLabel(n) { return engLookup('module.', n); }
+function petSlotLabel(s) { return engLookup('petslot.', s); }
+function petBodyLabel(n) { return engLookup('petbody.', n); }
+function modLabel(m) { return engLookup('mod.', m); }
 
 // The engine composes a catalyst description in English ("uncommon
 // gathering_yield 86% (halved)") and ships the structured fields next to it,
@@ -209,7 +221,7 @@ function renderShipItemAdvisor(si) {
     { label: t('ship.col_value'), numeric: true, getValue: it => it.value, render: it => it.value + ' / ' + it.valueMaxForLevel },
     { label: t('ship.col_pct_of_max'), numeric: true, getValue: it => it.valuePctOfMax, render: it => it.valuePctOfMax + '%' },
     { label: t('ship.col_mods'), numeric: false, getValue: it => it.bonuses.join(','),
-      render: it => it.bonuses.map(b => esc(b)).join(', ') || '<span style="color:var(--dim)">' + t('common.none') + '</span>' },
+      render: it => it.bonuses.map(b => esc(modLabel(b))).join(', ') || '<span style="color:var(--dim)">' + t('common.none') + '</span>' },
   ];
   html += tableHtml('tbl-ship-items', si.items, cols);
 
@@ -1017,9 +1029,9 @@ function renderPets(p) {
 
   html += '<h2>' + t('pets.all_pets') + '</h2>';
   const petCols = [
-    { label: t('pets.col_pet'), numeric: false, getValue: pet => pet.name, render: pet => '<b>' + esc(pet.name) + '</b>' },
+    { label: t('pets.col_pet'), numeric: false, getValue: pet => pet.name, render: pet => '<b>' + esc(petBodyLabel(pet.name)) + '</b>' },
     { label: t('pets.col_slot'), numeric: false, getValue: pet => pet.equipped ? pet.slotType : '~unequipped',
-      render: pet => pet.equipped ? esc(pet.slotType) : '<span class="badge b-empty">' + t('pets.badge_unequipped') + '</span>' },
+      render: pet => pet.equipped ? esc(petSlotLabel(pet.slotType)) : '<span class="badge b-empty">' + t('pets.badge_unequipped') + '</span>' },
     { label: t('pets.col_lvl'), numeric: true, getValue: pet => pet.level, render: pet => pet.level },
     { label: t('pets.col_xp'), numeric: true, getValue: pet => pet.currentXp, render: pet => pet.currentXp + '/' + pet.targetXp },
     { label: t('pets.col_boost'), numeric: true, getValue: pet => pet.boost, render: pet => pet.boost },
@@ -1040,7 +1052,7 @@ function renderPets(p) {
   const eq = p.pets.filter(function (x) { return x.equipped; });
   html += '<div class="list">';
   html += '<div class="row"><span style="min-width:90px"><b>' + t('sim.pet') + '</b></span><select id="petSelect" onchange="simPet()" class="pet-input">';
-  for (const pet of eq) html += '<option value="' + esc(pet.id) + '">' + t('sim.pet_option', { name: esc(pet.name), boost: pet.boost, food: pet.food }) + '</option>';
+  for (const pet of eq) html += '<option value="' + esc(pet.id) + '">' + t('sim.pet_option', { name: esc(petBodyLabel(pet.name)), boost: pet.boost, food: pet.food }) + '</option>';
   html += '</select></div>';
   html += '<div class="row"><span style="min-width:90px"><b>' + t('sim.boost') + '</b></span><input type="range" id="petBoost" min="0" max="45" value="0" oninput="simPet()" style="width:260px"> <span id="petBoostVal" style="min-width:110px;display:inline-block"></span></div>';
   html += '<div class="row"><span style="min-width:90px"><b>' + t('sim.autofeed') + '</b></span><input type="range" id="petFeed" min="50" max="100" step="5" value="50" oninput="simPet()" style="width:260px"> <span id="petFeedVal" style="min-width:110px;display:inline-block"></span></div>';
@@ -1101,7 +1113,7 @@ function simPet() {
   document.getElementById('petFeedVal').textContent = limit + '%' + (limit === pet.autofeedLimit ? ' ' + t('sim.current') : '');
 
   if (!pet.equipped) {
-    out.innerHTML = '<div class="row">' + t('sim.not_equipped', { name: esc(pet.name) }) + '</div>';
+    out.innerHTML = '<div class="row">' + t('sim.not_equipped', { name: esc(petBodyLabel(pet.name)) }) + '</div>';
     return;
   }
   const hours = PetMath.petHoursToNextLevel(pet.level, pet.currentXp, boost, pet.food, pet.autofeed, limit, p.techSkill, p.premiumActive);
@@ -1125,7 +1137,7 @@ function simPet() {
   const days = perDay > 0 ? p.petFood / perDay : Infinity;
 
   let html = '';
-  html += '<div class="row"><span>' + t('sim.level_line', { name: esc(pet.name), from: pet.level, to: pet.level + 1 }) + '</span>';
+  html += '<div class="row"><span>' + t('sim.level_line', { name: esc(petBodyLabel(pet.name)), from: pet.level, to: pet.level + 1 }) + '</span>';
   html += '<span>' + t('sim.xp_now', { food: pet.food }) + ' <b>' + PetMath.petXpPerHour(pet.level, boost, pet.food, p.techSkill, p.premiumActive) + '</b></span>';
   html += '<span>' + t('sim.avg_food') + ' <b>' + ((100 + limit) / 2) + '%</b></span>';
   html += '<span>' + t('sim.time_to_next') + ' <b style="color:var(--good)">' + fmtH(hours) + '</b>' + (saved !== null && saved !== 0 ? ' <span class="gain">' + (saved > 0 ? '-' + fmtH(saved) : '+' + fmtH(-saved)) + ' ' + t('sim.vs_current') + '</span>' : '') + '</span></div>';
@@ -1133,7 +1145,7 @@ function simPet() {
   html += '<div class="row"><span>' + t('sim.boost_cost') + ' <b>' + (cost > 0 ? t('sim.of_each_resource', { n: fmtC(cost), total: entries.length }) : '-') + '</b>';
   if (cost > 0) {
     if (!short.length) html += ' <span class="badge b-ok">' + t('sim.affordable_all', { total: entries.length }) + '</span>';
-    else html += ' <span class="badge b-warn">' + t('sim.resources_short', { n: short.length, total: entries.length }) + '</span> <span style="color:var(--dim)">' + short.map(function (e) { return t('sim.short_item', { name: e[0], have: fmtC(e[1]), need: fmtC(cost - e[1]) }); }).join(', ') + '</span>';
+    else html += ' <span class="badge b-warn">' + t('sim.resources_short', { n: short.length, total: entries.length }) + '</span> <span style="color:var(--dim)">' + short.map(function (e) { return t('sim.short_item', { name: materialLabel(e[0]), have: fmtC(e[1]), need: fmtC(cost - e[1]) }); }).join(', ') + '</span>';
   }
   html += '</div>';
 
@@ -1222,7 +1234,7 @@ function renderInventory(inv) {
 // ---- Materials tab: blueprint material requirements vs stock ----
 function materialCols(showFarm) {
   const cols = [
-    { label: t('mat.col_material'), numeric: false, getValue: r => r.material, render: r => '<b>' + esc(r.material) + '</b>' },
+    { label: t('mat.col_material'), numeric: false, getValue: r => r.material, render: r => '<b>' + esc(materialLabel(r.material)) + '</b>' },
     { label: t('mat.col_stock'), numeric: true, getValue: r => r.stock, render: r => r.stock.toLocaleString() },
     { label: t('mat.col_need_per_craft'), numeric: true, getValue: r => r.neededPerCraftAll, render: r => r.neededPerCraftAll.toLocaleString() },
     { label: t('mat.col_need_all_uses'), numeric: true, getValue: r => r.neededAllUses, render: r => r.neededAllUses.toLocaleString() },
@@ -1319,7 +1331,7 @@ function renderLab(lab) {
   html += card(t('lab.card_chain_time'), fmtHours(plan.hoursPipelined) +
     '<span style="font-size:11px;color:var(--dim)">' + t('lab.chain_time_note', { n: fmtHours(plan.hoursSequential) }) + '</span>');
   if (plan.binding) {
-    html += card(t('lab.card_binding'), '<span style="color:var(--bad)">' + esc(plan.binding.name) + '</span> ' + covBar(plan.binding.coverage) +
+    html += card(t('lab.card_binding'), '<span style="color:var(--bad)">' + esc(materialLabel(plan.binding.name)) + '</span> ' + covBar(plan.binding.coverage) +
       '<span style="font-size:11px;color:var(--dim)">' + t('lab.pct_covered', { n: (plan.binding.coverage * 100).toFixed(0) }) + '</span>');
   } else {
     // plan.raw only ever holds resources the chain CANNOT produce, and in
@@ -1333,31 +1345,31 @@ function renderLab(lab) {
     html += card(t('lab.raw_resources'), '<span style="color:var(--good)">' + t('lab.all_covered') + '</span>' +
       '<span style="font-size:11px;color:var(--dim)">' + t('lab.nothing_to_gather') +
       (producing.length
-        ? t(producing.length > 1 ? 'lab.inputs_first_many' : 'lab.inputs_first_one', { n: producing.length, names: esc(producing.slice(0, 3).join(', ')) })
+        ? t(producing.length > 1 ? 'lab.inputs_first_many' : 'lab.inputs_first_one', { n: producing.length, names: esc(producing.slice(0, 3).map(m => materialLabel(m)).join(', ')) })
         : '') + '</span>');
   }
   html += card(t('lab.card_queue_slots'), t('lab.slots_free', { free: lab.freeSlots, total: lab.queueSlots }));
-  html += card(t(plan.criticalGroup.length > 1 ? 'lab.card_critical_many' : 'lab.card_critical_one'), plan.criticalGroup.length ? '<span class="crit">' + plan.criticalGroup.map(esc).join(', ') + '</span>' : '-');
+  html += card(t(plan.criticalGroup.length > 1 ? 'lab.card_critical_many' : 'lab.card_critical_one'), plan.criticalGroup.length ? '<span class="crit">' + plan.criticalGroup.map(n => esc(moduleLabel(n))).join(', ') + '</span>' : '-');
   html += '</div>';
 
   // --- per building ---
   const rows = plan.buildings.filter(b => b.unitsToRun > 0);
   html += '<h2>' + t('lab.h_per_building') + '</h2><div class="sub">' + t('lab.per_building_note') + '</div>';
   html += tableHtml('tbl-lab-buildings', rows, [
-    { label: t('lab.col_building'), numeric: false, getValue: r => r.name, render: r => (plan.criticalGroup.includes(r.name) ? '<span class="crit">' : '<b>') + esc(r.name) + (plan.criticalGroup.includes(r.name) ? ' &#9650;</span>' : '</b>') },
+    { label: t('lab.col_building'), numeric: false, getValue: r => r.name, render: r => (plan.criticalGroup.includes(r.name) ? '<span class="crit">' : '<b>') + esc(moduleLabel(r.name)) + (plan.criticalGroup.includes(r.name) ? ' &#9650;</span>' : '</b>') },
     { label: t('lab.col_stage'), numeric: true, getValue: r => r.stage, render: r => String(r.stage) },
     { label: t('lab.col_units'), numeric: true, getValue: r => r.unitsToRun, render: r => String(r.unitsToRun) },
     { label: t('lab.col_timer'), numeric: true, getValue: r => r.timerNow, render: r => t('lab.timer_value', { s: r.timerNow.toFixed(1), lvl: r.level }) },
     { label: t('lab.col_time'), numeric: true, getValue: r => r.hours, render: r => fmtHours(r.hours) },
     { label: t('lab.col_inputs'), numeric: false, getValue: r => r.inputs.length,
       render: r => r.inputs.map(i => '<span style="white-space:nowrap;' + (i.coverage < 1 && i.kind === 'currency' ? 'color:var(--bad)' : '') + '">' +
-        esc(i.name) + ' ' + fmtC(i.needed) + '<span class="dimtext"> / ' + fmtC(i.stock) + '</span></span>').join(' &middot; ') },
+        esc(materialLabel(i.name)) + ' ' + fmtC(i.needed) + '<span class="dimtext"> / ' + fmtC(i.stock) + '</span></span>').join(' &middot; ') },
   ]);
 
   // --- raw currencies ---
   html += '<h2>' + t('lab.raw_resources') + '</h2>';
   html += tableHtml('tbl-lab-raw', plan.raw, [
-    { label: t('lab.col_resource'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' },
+    { label: t('lab.col_resource'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(materialLabel(r.name)) + '</b>' },
     { label: t('lab.col_needed'), numeric: true, getValue: r => r.needed, render: r => fmtC(r.needed) },
     { label: t('lab.col_stock'), numeric: true, getValue: r => r.stock, render: r => fmtC(r.stock) },
     { label: t('lab.col_coverage'), numeric: true, getValue: r => r.coverage, render: r => covBar(r.coverage) + (r.coverage * 100).toFixed(0) + '%' },
@@ -1370,7 +1382,7 @@ function renderLab(lab) {
   if (plan.groupRoi && plan.groupRoi.buildings.length > 1) {
     roiIndex++;
     html += '<div class="row"><span class="num">' + roiIndex + '</span><span>' +
-      t('lab.roi_group', { names: plan.groupRoi.buildings.map(esc).join(' + '), cost: fmtC(plan.groupRoi.cost) }) +
+      t('lab.roi_group', { names: plan.groupRoi.buildings.map(n => esc(moduleLabel(n))).join(' + '), cost: fmtC(plan.groupRoi.cost) }) +
       (plan.groupRoi.creditsPerHourSaved !== null
         ? t('lab.roi_saves', { hours: fmtHours(plan.groupRoi.hoursSaved), rate: fmtC(plan.groupRoi.creditsPerHourSaved) })
         : t('lab.roi_saves_nothing')) + '</span></div>';
@@ -1380,7 +1392,7 @@ function renderLab(lab) {
   roi.forEach((r) => {
     roiIndex++;
     html += '<div class="row"><span class="num">' + roiIndex + '</span><span>' +
-      t('lab.roi_row', { name: esc(r.name), from: r.level, to: r.level + 1, cost: fmtC(r.nextLevelCost) }) +
+      t('lab.roi_row', { name: esc(moduleLabel(r.name)), from: r.level, to: r.level + 1, cost: fmtC(r.nextLevelCost) }) +
       t('lab.roi_saves', { hours: fmtHours(r.hoursSaved), rate: fmtC(r.creditsPerHourSaved) }) +
       (r.levelsToFloor ? '<span class="dimtext">' + t('lab.roi_to_floor', { n: r.levelsToFloor, cost: fmtC(r.costToFloor) }) + '</span>' : '<span class="dimtext">' + t('lab.roi_at_floor') + '</span>') +
       '</span></div>';
@@ -1393,16 +1405,16 @@ function renderLab(lab) {
     html += '<h2>' + t('lab.h_speed') + '</h2><div class="list">';
     if (best) {
       html += '<div class="row"><span>' + t('lab.speed_best', {
-        names: plan.speed.buildings.map(esc).join(' + '),
+        names: plan.speed.buildings.map(n => esc(moduleLabel(n))).join(' + '),
         x: best.x,
         tied: plan.speed.buildings.length > 1 ? t('lab.speed_tied') : '',
         hours: fmtHours(best.hours),
         saved: fmtHours(best.hoursSaved),
         mult: best.inputMult,
-        extra: best.extraInputs.map(e => esc(e.name) + ' ' + fmtC(e.extra)).join(', '),
+        extra: best.extraInputs.map(e => esc(materialLabel(e.name)) + ' ' + fmtC(e.extra)).join(', '),
       }) + '</span></div>';
     } else {
-      html += '<div class="row"><span>' + t('lab.speed_none', { names: plan.speed.buildings.map(esc).join(' + ') }) + '</span></div>';
+      html += '<div class="row"><span>' + t('lab.speed_none', { names: plan.speed.buildings.map(n => esc(moduleLabel(n))).join(' + ') }) + '</span></div>';
     }
     html += '</div>';
   }
@@ -1413,10 +1425,10 @@ function renderLab(lab) {
   const shortRows = bundleRows.filter(b => b.have < b.need);
   html += card(t('lab.card_bundle'), shortRows.length ? '<span style="color:var(--warn)">' + t('lab.ready_count', { have: bundleRows.length - shortRows.length, total: bundleRows.length }) + '</span>' : '<span style="color:var(--good)">' + t('lab.ready_count', { have: 5, total: 5 }) + '</span>');
   html += card(t('lab.card_founding_time'), founding.ready ? t('lab.ready') : fmtHours(founding.hoursPipelined));
-  html += card(t('lab.card_after_founding'), fmtHours(after.hoursPipelined) + (after.binding ? '<span style="font-size:11px;color:var(--bad)">' + t('lab.binding_note', { name: esc(after.binding.name) }) + '</span>' : ''));
+  html += card(t('lab.card_after_founding'), fmtHours(after.hoursPipelined) + (after.binding ? '<span style="font-size:11px;color:var(--bad)">' + t('lab.binding_note', { name: esc(materialLabel(after.binding.name)) }) + '</span>' : ''));
   html += '</div>';
   if (shortRows.length) {
-    html += '<div class="list">' + shortRows.map(b => '<div class="row"><span><b>' + esc(b.name) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
+    html += '<div class="list">' + shortRows.map(b => '<div class="row"><span><b>' + esc(materialLabel(b.name)) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
   }
   return html;
 }
@@ -1554,15 +1566,15 @@ function renderBase(b) {
   if (b.live) {
     html += '<h2>' + t('base.h_base', { name: esc(b.live.name) }) + '</h2><div class="cards">';
     html += card(t('base.card_stellarium_held'), String(b.live.stellarium));
-    if (b.live.nextUnlock) html += card(t('base.card_next_unlock'), esc(b.live.nextUnlock.name) + '<span class="est">' + t('base.next_unlock_note', { cost: b.live.nextUnlock.cost, eta: b.live.nextUnlock.etaDays === 0 ? t('base.affordable_now') : t('base.eta_in', { days: fmtDays(b.live.nextUnlock.etaDays) }) }) + '</span>');
+    if (b.live.nextUnlock) html += card(t('base.card_next_unlock'), esc(moduleLabel(b.live.nextUnlock.name)) + '<span class="est">' + t('base.next_unlock_note', { cost: b.live.nextUnlock.cost, eta: b.live.nextUnlock.etaDays === 0 ? t('base.affordable_now') : t('base.eta_in', { days: fmtDays(b.live.nextUnlock.etaDays) }) }) + '</span>');
     html += '</div>';
     html += tableHtml('tbl-base-live', b.live.modules.filter(m => m.unlocked), [
-      { label: t('base.col_module'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' + (r.active ? '' : ' <span style="color:var(--bad)">' + t('base.off') + '</span>') },
+      { label: t('base.col_module'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(moduleLabel(r.name)) + '</b>' + (r.active ? '' : ' <span style="color:var(--bad)">' + t('base.off') + '</span>') },
       { label: t('common.level'), numeric: true, getValue: r => r.level, render: r => String(r.level) },
       { label: t('base.col_tier'), numeric: true, getValue: r => r.tier, render: r => String(r.tier) },
       { label: t('base.col_boost'), numeric: true, getValue: r => r.boost, render: r => r.boost.toFixed(1) + '%' },
       { label: t('base.col_output_tick'), numeric: true, getValue: r => r.output, render: r => r.output.toFixed(2) },
-      { label: t('base.col_next_level'), numeric: true, getValue: r => r.nextLevelCost, render: r => fmtC(r.nextLevelCost) + t('base.of_each_colon', { list: r.materials.map(esc).join(', ') }) },
+      { label: t('base.col_next_level'), numeric: true, getValue: r => r.nextLevelCost, render: r => fmtC(r.nextLevelCost) + t('base.of_each_colon', { list: r.materials.map(m => esc(materialLabel(m))).join(', ') }) },
       { label: t('base.col_next_tier'), numeric: true, getValue: r => r.nextTierCost, render: r => t('base.stellarium_amount', { n: r.nextTierCost }) },
     ]);
   }
@@ -1571,10 +1583,10 @@ function renderBase(b) {
   html += '<h2>' + t('base.h_modules') + '</h2><div class="sub">' + t('base.modules_note') + '</div>';
   const rows = plan.unlocks.map(u => Object.assign({}, u, plan.targets.find(t => t.name === u.name) || {}));
   html += tableHtml('tbl-base-modules', rows, [
-    { label: t('base.col_module'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' + (r.unlocked ? ' <span style="color:var(--good)">' + t('base.unlocked') + '</span>' : '') },
+    { label: t('base.col_module'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(moduleLabel(r.name)) + '</b>' + (r.unlocked ? ' <span style="color:var(--good)">' + t('base.unlocked') + '</span>' : '') },
     { label: t('base.col_type'), numeric: false, getValue: r => r.type || '', render: r => esc(moduleTypeLabel(r.type || '')) },
     { label: t('base.col_unlock'), numeric: true, getValue: r => r.cost, render: r => r.unlocked ? '-' : r.cost + '<span class="est">' + t('base.unlock_est', { cum: r.cumulative, days: fmtDays(r.daysToUnlock) }) + '</span>' },
-    { label: t('base.col_materials'), numeric: false, getValue: r => (r.materials || []).join(','), render: r => (r.materials || []).map(esc).join(', ') },
+    { label: t('base.col_materials'), numeric: false, getValue: r => (r.materials || []).join(','), render: r => (r.materials || []).map(m => esc(materialLabel(m))).join(', ') },
     { label: t('base.col_target_level'), numeric: true, getValue: r => r.to || 0, render: r => '<input class="pet-input base-input" type="number" min="0" value="' + (r.to || 0) + '" onchange="setBaseLevel(' + esc(jsStr(r.name)) + ', this.value)">' + (r.from ? '<span class="est">' + t('base.from_level', { n: r.from }) + '</span>' : '') },
     { label: t('base.col_cost_to_target'), numeric: true, getValue: r => r.perMaterial || 0, render: r => fmtN(r.perMaterial || 0) + t('base.of_each') },
     { label: t('base.col_boost_at_target'), numeric: true, getValue: r => r.boostAtTarget || 0, render: r => (r.boostAtTarget || 0).toFixed(0) + '%' },
@@ -1585,15 +1597,15 @@ function renderBase(b) {
   // --- stockpile ---
   html += '<h2>' + t('base.h_stockpile') + '</h2>';
   html += '<div class="sub">' + t('base.stockpile_note') + '</div>';
-  if (plan.buyFirst.length) html += '<div class="sub" style="color:var(--warn)">' + t('base.buy_first', { list: plan.buyFirst.map(esc).join(', ') }) + '</div>';
+  if (plan.buyFirst.length) html += '<div class="sub" style="color:var(--warn)">' + t('base.buy_first', { list: plan.buyFirst.map(n => esc(moduleLabel(n))).join(', ') }) + '</div>';
   html += tableHtml('tbl-base-stock', plan.stockpile, [
-    { label: t('base.col_material'), numeric: false, getValue: r => r.material, render: r => '<b>' + esc(r.material) + '</b>' },
+    { label: t('base.col_material'), numeric: false, getValue: r => r.material, render: r => '<b>' + esc(materialLabel(r.material)) + '</b>' },
     { label: t('base.col_needed'), numeric: true, getValue: r => r.needed, render: r => fmtN(r.needed) },
     { label: t('base.col_stock'), numeric: true, getValue: r => r.stock, render: r => fmtN(r.stock) },
     { label: t('common.short'), numeric: true, getValue: r => r.short, render: r => r.short > 0 ? '<span style="color:var(--bad)">' + fmtN(r.short) + '</span>' : '<span style="color:var(--good)">0</span>' },
-    { label: t('base.col_for'), numeric: false, getValue: r => r.modules.length, render: r => r.modules.map(esc).join(', ') },
-    { label: t('base.col_produced_by'), numeric: false, getValue: r => r.building || '', render: r => r.bought ? esc(r.building || '') : '<span style="color:var(--warn)">' + t('base.buy_building_first', { name: esc(r.building || '?') }) + '</span><span class="est">' + t('base.consumes', { list: r.inputs.map(esc).join(', ') }) + '</span>' },
-    { label: t('base.col_chain_time'), numeric: true, getValue: r => r.hoursPipelined === null ? -1 : r.hoursPipelined, render: r => r.hoursPipelined === null ? '-' : fmtHours(r.hoursPipelined) + (r.binding ? '<span style="color:var(--bad)">' + t('base.binding_pct', { name: esc(r.binding.name), pct: (r.binding.coverage * 100).toFixed(0) }) + '</span>' : '') },
+    { label: t('base.col_for'), numeric: false, getValue: r => r.modules.length, render: r => r.modules.map(n => esc(moduleLabel(n))).join(', ') },
+    { label: t('base.col_produced_by'), numeric: false, getValue: r => r.building || '', render: r => r.bought ? esc(moduleLabel(r.building || '')) : '<span style="color:var(--warn)">' + t('base.buy_building_first', { name: esc(moduleLabel(r.building || '?')) }) + '</span><span class="est">' + t('base.consumes', { list: r.inputs.map(m => esc(materialLabel(m))).join(', ') }) + '</span>' },
+    { label: t('base.col_chain_time'), numeric: true, getValue: r => r.hoursPipelined === null ? -1 : r.hoursPipelined, render: r => r.hoursPipelined === null ? '-' : fmtHours(r.hoursPipelined) + (r.binding ? '<span style="color:var(--bad)">' + t('base.binding_pct', { name: esc(materialLabel(r.binding.name)), pct: (r.binding.coverage * 100).toFixed(0) }) + '</span>' : '') },
   ]);
   return html;
 }
