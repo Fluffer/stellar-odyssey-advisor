@@ -420,34 +420,26 @@ describe("voyager inherits the exploring profile of boost items", () => {
     }
   });
 
-  test("cosmic dust and exploring XP count during an expedition", () => {
-    for (const stat of ["cosmic_dust_bonus", "exploring_xp"]) {
-      assert.ok(ACTIVITY_RELEVANT_STATS.voyager.includes(stat),
-        stat + " does something on a Voyager expedition");
-    }
-    // The voyager-only utility stats must not have been lost in the widening.
-    for (const stat of ["fuel_efficiency", "catalyst_drop_chance", "voyager_jumps_bonus"]) {
-      assert.ok(ACTIVITY_RELEVANT_STATS.voyager.includes(stat), stat + " missing");
-    }
+  test("the dust catalyst does NOT multiply expedition dust", () => {
+    // Measured, not assumed. Expedition to Zilsynkyxbal on 2026-09-09:
+    // K star (10) + 3 bodies (60) + 17,956.78 ly = raw 18,026.78, and the
+    // voyager paid 17,044 kept + 5,681 taxed = 22,725 gross. That is
+    // x1.2606, i.e. owl 14% x premium 10% = 1.254 and nothing more. Had the
+    // +54.9% cosmic dust catalyst applied it would have paid ~35,000.
+    // The game's "Exploring & Voyager" tab names the shared PROFILE; it does
+    // not mean the dust bonus reaches the expedition reward.
+    const raw = 10 + 3 * 20 + 17956.78;
+    const measured = (17044 + 5681) / raw;
+    assert.ok(Math.abs(measured - 1.14 * 1.10) < 0.01,
+      "owl x premium should explain the whole multiplier, got " + measured);
+    assert.ok(Math.abs(measured - 1.14 * 1.10 * 1.549) > 0.5,
+      "and the catalyst-inclusive model should be far off");
+    assert.ok(!ACTIVITY_RELEVANT_STATS.voyager.includes("cosmic_dust_bonus"),
+      "so cosmic_dust_bonus must not be listed as doing something on an expedition");
   });
 
-  test("a dust catalyst on a laser reaches the voyager context", () => {
-    const state = {
-      ship: {
-        laser_slot: {
-          name: "Legendary Laser", rarity: "legendary", level: 60,
-          catalysts: [
-            { _id: "d1", stat: "cosmic_dust_bonus", rarity: "legendary", range: 93, activity: "exploring" },
-          ],
-        },
-      },
-      player: { skills: {} }, catalysts: [], materials: [], droids: [], blueprints: [],
-    };
-    const out = core.analyze(state);
-    const row = (out.contextTotals.voyager || []).find(r => r.stat === "cosmic_dust_bonus");
-    const exploring = (out.contextTotals.exploring || []).find(r => r.stat === "cosmic_dust_bonus");
-    assert.ok(row, "cosmic_dust_bonus must appear in the voyager context");
-    assert.ok(row.total > 0, "and carry the laser's value, not zero");
-    assert.equal(row.total, exploring.total, "an expedition gets the same bonus as exploring");
+  test("the voyager-only utility stats are the relevant ones", () => {
+    assert.deepEqual([...ACTIVITY_RELEVANT_STATS.voyager].sort(),
+      ["catalyst_drop_chance", "fuel_efficiency", "voyager_jumps_bonus"]);
   });
 });
