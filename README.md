@@ -16,7 +16,10 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   8 NPC types) plus a per-activity bonus panel showing what is *actually* active during
   each activity using the game's real activity-chain semantics (a non-empty activity
   group replaces the item's default group for that activity; empty groups inherit,
-  voyager ← exploring ← default). Each activity card lists only the stats that matter
+  voyager ← exploring ← default). On the laser and probes that chain means a Voyager
+  expedition reads their **exploring** group — the game labels that tab "Exploring &
+  Voyager" — so the Cosmic dust and Exploring XP catalysts on those two items are working
+  during expeditions too, and the advisor shows them in the voyager context. Each activity card lists only the stats that matter
   there; every capped stat relevant to that activity is shown with current / cap — even
   at zero investment — with an inline fill bar and the wasted amount when over the cap,
   plus alerts for activity overrides that lose value vs what they replace

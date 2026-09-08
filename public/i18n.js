@@ -73,6 +73,7 @@ const EN = {
   // ---- gear, installs, merges, ship items ----
   "act.default": "Default",
   "act.exploring": "Exploring",
+  "act.exploring_voyager": "Exploring & Voyager",
   "act.crafting": "Crafting",
   "act.galaxyboss": "Galaxy Boss",
   "act.dungeons": "Dungeons",
@@ -899,6 +900,7 @@ const ZH = {
   // ---- gear, installs, merges, ship items ----
   "act.default": "默认",
   "act.exploring": "探索",
+  "act.exploring_voyager": "探索与 Voyager",
   "act.crafting": "制造",
   "act.galaxyboss": "星际 Boss",
   "act.dungeons": "星际副本",

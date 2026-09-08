@@ -111,8 +111,14 @@ function dotColor(r) {
 // Looked up per call, not frozen at load: the language can change after load.
 // Anything the game invents that we do not know a label for falls back to the
 // raw activity id, exactly as the old map did.
-function actLabel(a) {
+// Optional `slot`: on the two BOOST items the exploring profile is also what
+// a Voyager expedition reads, and the game labels that tab "Exploring &
+// Voyager" rather than "Exploring". Mirroring it here is the only place the
+// GUI can tell you your dust catalysts are working on expeditions too.
+const BOOST_SLOTS = ['laser_slot', 'probes_slot'];
+function actLabel(a, slot) {
   const known = ['default', 'exploring', 'crafting', 'galaxyboss', 'dungeons', 'voyager'];
+  if (a === 'exploring' && BOOST_SLOTS.includes(slot)) return t('act.exploring_voyager');
   return known.includes(a) ? t('act.' + a) : a;
 }
 
@@ -282,9 +288,9 @@ function renderGear(gear) {
     for (const g of it.groups) {
       const full = g.filled >= g.slots;
       const style = g.inherited ? ' style="opacity:0.55"' : '';
-      html += '<div class="group"' + style + '><div class="group-head"><span>' + esc(actLabel(g.activity)) + '</span>';
+      html += '<div class="group"' + style + '><div class="group-head"><span>' + esc(actLabel(g.activity, it.slot)) + '</span>';
       if (g.inherited) {
-        html += '<span class="badge b-empty">' + t('gear.inherits_from', {name: esc(actLabel(g.inheritedFrom))}) + '</span></div>';
+        html += '<span class="badge b-empty">' + t('gear.inherits_from', {name: esc(actLabel(g.inheritedFrom, it.slot))}) + '</span></div>';
       } else {
         const cls = g.filled === 0 ? 'b-empty' : (full ? 'b-ok' : 'b-warn');
         html += '<span class="badge ' + cls + '">' + g.filled + '/' + g.slots + '</span></div>';

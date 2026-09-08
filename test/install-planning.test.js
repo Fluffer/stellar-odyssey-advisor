@@ -399,3 +399,55 @@ describe("analyze() end to end", () => {
     assert.equal(core.analyze(minimalState()).battleTrusted, true);
   });
 });
+
+// A Voyager expedition reads the EXPLORING profile of the laser and probes:
+// boost items have no voyager tab, so the chain voyager -> exploring ->
+// default lands on their exploring group. The game confirms it twice -- the
+// install dialog labels that tab "Exploring & Voyager" on those two items and
+// lists its Cosmic Dust Bonus under "Current bonuses (Exploring & Voyager)".
+// Getting this wrong makes an expedition look far less rewarding than it is.
+describe("voyager inherits the exploring profile of boost items", () => {
+  const { ACTIVITY_RELEVANT_STATS, ITEM_ACTIVITIES, activityChain } = require("../lib/constants.js");
+
+  test("the resolution chain is voyager -> exploring -> default", () => {
+    assert.deepEqual(activityChain("voyager"), ["voyager", "exploring", "default"]);
+  });
+
+  test("boost items have no voyager tab, so they can only inherit", () => {
+    for (const slot of ["laser_slot", "probes_slot"]) {
+      assert.ok(!ITEM_ACTIVITIES[slot].includes("voyager"), slot + " must not have a voyager tab");
+      assert.ok(ITEM_ACTIVITIES[slot].includes("exploring"), slot + " must have an exploring tab");
+    }
+  });
+
+  test("cosmic dust and exploring XP count during an expedition", () => {
+    for (const stat of ["cosmic_dust_bonus", "exploring_xp"]) {
+      assert.ok(ACTIVITY_RELEVANT_STATS.voyager.includes(stat),
+        stat + " does something on a Voyager expedition");
+    }
+    // The voyager-only utility stats must not have been lost in the widening.
+    for (const stat of ["fuel_efficiency", "catalyst_drop_chance", "voyager_jumps_bonus"]) {
+      assert.ok(ACTIVITY_RELEVANT_STATS.voyager.includes(stat), stat + " missing");
+    }
+  });
+
+  test("a dust catalyst on a laser reaches the voyager context", () => {
+    const state = {
+      ship: {
+        laser_slot: {
+          name: "Legendary Laser", rarity: "legendary", level: 60,
+          catalysts: [
+            { _id: "d1", stat: "cosmic_dust_bonus", rarity: "legendary", range: 93, activity: "exploring" },
+          ],
+        },
+      },
+      player: { skills: {} }, catalysts: [], materials: [], droids: [], blueprints: [],
+    };
+    const out = core.analyze(state);
+    const row = (out.contextTotals.voyager || []).find(r => r.stat === "cosmic_dust_bonus");
+    const exploring = (out.contextTotals.exploring || []).find(r => r.stat === "cosmic_dust_bonus");
+    assert.ok(row, "cosmic_dust_bonus must appear in the voyager context");
+    assert.ok(row.total > 0, "and carry the laser's value, not zero");
+    assert.equal(row.total, exploring.total, "an expedition gets the same bonus as exploring");
+  });
+});
