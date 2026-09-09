@@ -1,9 +1,11 @@
-// Which of the game's sprite symbols the GUI draws for each kind of game
-// thing. The game ships one 2.7 MB SVG sprite; extract-icons.js copies the
-// symbols we actually use into public/icons.svg. This file is the single
-// list of WHICH symbols those are, so the extractor and the page can never
-// disagree -- an id the page asks for but the extractor never copied is a
-// blank on screen, and check-page.js reports exactly that.
+// Which SVG symbol the GUI draws for each kind of game thing. Two sprites
+// hold them: public/icons.svg, which extract-icons.js copies out of the
+// game's own 2.7 MB sprite in your local install, and public/icons-local.svg,
+// the handful the advisor draws itself for things the game ships no artwork
+// for. This file is the single list of WHICH symbols those are and which
+// sprite each lives in, so the extractor and the page can never disagree --
+// an id the page asks for but neither sprite has is a blank on screen, and
+// check-page.js reports exactly that.
 //
 // Loaded twice, like pet-math.js: as window.IconMap by a <script> tag, and
 // via require() by extract-icons.js and check-page.js.
@@ -20,7 +22,8 @@
 //   currencies   <use href="#credits">, #cosmic_dust, #quantum_cores, ...
 //   clone count  <use href="#Clones">
 // The exceptions are marked OURS: the six activity tabs and the technology
-// skills, which the game labels with words only, so the pick is editorial.
+// skills, which the game labels with words only, so the pick is editorial;
+// and advisor_droid, which is not the game's artwork at all -- see LOCAL_IDS.
 
 // Gear/ship slots. The game keys the slot "weapon_slot" and the icon
 // "weapon" -- the same word without the suffix, for all six.
@@ -93,8 +96,7 @@ const TECH_ICONS = {
 
 // Currencies and counters the advisor puts on summary cards. Keyed by what
 // the advisor calls them, not by the sprite id, so a card asks for what it
-// shows. There is deliberately no "droids": the game draws its droids with
-// no sprite symbol at all, and a missing icon costs that card nothing.
+// shows.
 const RESOURCE_ICONS = {
   credits: "credits",
   dust: "cosmic_dust",
@@ -104,10 +106,21 @@ const RESOURCE_ICONS = {
   fuel: "fuel",
   pet_food: "pet_food",
   clones: "Clones",
+  // The game ships no droid artwork -- no sprite symbol, no asset in the
+  // archive -- and Droids sitting blank beside an iconned Clones was the one
+  // hole this map could not fill from the game. advisor_droid is ours, drawn
+  // from the Clones palette in public/icons-local.svg. See LOCAL_IDS below.
+  droids: "advisor_droid",
   warp_capsule: "warp_capsule",
   crafting_level: "sidebar_crafting",
   base: "sidebar_base",
 };
+
+// Ids the advisor draws itself, in public/icons-local.svg, rather than
+// copying out of the game's sprite. They ship with the repo -- they are our
+// artwork, not the game's -- so extract-icons.js must not go looking for
+// them and check-page.js must check them against the right file.
+const LOCAL_IDS = new Set(["advisor_droid"]);
 
 const lookup = (map, key) => (key && Object.prototype.hasOwnProperty.call(map, key)) ? map[key] : null;
 
@@ -123,8 +136,8 @@ const IconMap = {
   // The game's own spellings: "#brutes_avatar", "#pet_cat".
   npc: (n) => (n ? String(n).toLowerCase() + "_avatar" : null),
   pet: (n) => (n ? "pet_" + String(n).toLowerCase() : null),
-  // Every id the GUI can ask for. extract-icons.js copies exactly these out
-  // of the game sprite; check-page.js names the ones that are not there.
+  LOCAL_IDS,
+  // Every id the GUI can ask for, from both files.
   ids() {
     const out = new Set();
     for (const map of [SLOT_ICONS, ACTIVITY_ICONS, SKILL_ICONS, BODY_ICONS, TECH_ICONS, RESOURCE_ICONS]) {
@@ -134,6 +147,10 @@ const IconMap = {
     for (const p of PETS) out.add(IconMap.pet(p));
     return [...out];
   },
+  // The split the two files need: extract-icons.js copies gameIds() out of
+  // the game sprite, localIds() are already in the repo.
+  gameIds: () => IconMap.ids().filter(id => !LOCAL_IDS.has(id)),
+  localIds: () => IconMap.ids().filter(id => LOCAL_IDS.has(id)),
 };
 
 if (typeof module !== "undefined" && module.exports) module.exports = IconMap;

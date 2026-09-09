@@ -118,11 +118,13 @@ const materials = symbols.length - catalysts;
 // Everything else the GUI draws -- ship slots, activity tabs, NPC factions,
 // planet bodies, pets, technology skills, currencies. public/icon-map.js is
 // the list; nothing here decides what to keep, so adding an icon to the GUI
-// is one edit in one file and a re-run of this script.
+// is one edit in one file and a re-run of this script. gameIds() and not
+// ids(): what the advisor draws itself lives in public/icons-local.svg and
+// was never in the game's sprite to copy.
 const unknown = [];
 try {
   const IconMap = require(path.join(__dirname, "public", "icon-map.js"));
-  for (const id of IconMap.ids()) if (!take(id) && !taken.has(id)) unknown.push(id);
+  for (const id of IconMap.gameIds()) if (!take(id) && !taken.has(id)) unknown.push(id);
 } catch (e) {
   console.error("  note: could not read public/icon-map.js (" + e.message + ")");
 }

@@ -171,14 +171,25 @@ function resIcon(key, cls) { return IM() ? gameIcon(IM().res(key), cls) : ''; }
 // A card label carries a smaller glyph than a table row: .k is 11px text.
 function cardIcon(icon, label) { return icon ? icon + '<span class="k-label">' + label + '</span>' : label; }
 
+// Two sprites: icons.svg is the game's artwork, extracted locally and absent
+// until you run extract-icons.js; icons-local.svg is the handful the advisor
+// draws itself and ships with the repo. Either can be missing without taking
+// the other down, and the id set is their union.
+function injectSprite(svg) {
+  if (!svg) return [];
+  const holder = document.createElement('div');
+  holder.style.display = 'none';
+  holder.innerHTML = svg;
+  document.body.insertBefore(holder, document.body.firstChild);
+  return Array.from(holder.querySelectorAll('symbol')).map(n => n.id);
+}
 function loadIcons() {
-  return fetch('/icons.svg').then(r => (r.ok ? r.text() : null)).then(svg => {
-    if (!svg) return;
-    const holder = document.createElement('div');
-    holder.style.display = 'none';
-    holder.innerHTML = svg;
-    document.body.insertBefore(holder, document.body.firstChild);
-    window.__iconIds = new Set(Array.from(holder.querySelectorAll('symbol')).map(n => n.id));
+  const get = url => fetch(url).then(r => (r.ok ? r.text() : null)).catch(() => null);
+  return Promise.all([get('/icons.svg'), get('/icons-local.svg')]).then(sprites => {
+    const ids = [];
+    for (const svg of sprites) ids.push(...injectSprite(svg));
+    if (!ids.length) return;
+    window.__iconIds = new Set(ids);
     window.__iconsReady = true;
     if (window.lastData) render(window.lastData);
   }).catch(() => {});
@@ -659,7 +670,7 @@ function renderUnits(u) {
   html += card(cardIcon(resIcon('credits', 'mat-tile xs'), t('units.credits')), fmtC(u.credits));
   const priceNote = g => ' <span style="font-size:11px;color:var(--dim)">' + t('units.next_price', { c: fmtC(g.nextPrice) }) +
     (g.priceSource === 'extrapolated' ? ' <span title="' + t('units.curve_title') + '">' + t('units.curve') + '</span>' : '') + '</span>';
-  html += card(t('units.droids'), u.droids.count + priceNote(u.droids));
+  html += card(cardIcon(resIcon('droids', 'mat-tile xs'), t('units.droids')), u.droids.count + priceNote(u.droids));
   html += card(cardIcon(resIcon('clones', 'mat-tile xs'), t('units.clones')), u.clones.count + priceNote(u.clones));
   html += '</div>';
 

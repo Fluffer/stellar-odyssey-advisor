@@ -121,17 +121,34 @@ if (!fs.existsSync(ICONS)) {
   if (stats.length && noIcon.length)
     console.log("  note: no icon for " + noIcon.join(", ") +
       " - re-run extract-icons.js after a game update");
-  // Everything public/icon-map.js declares must be in the sprite too. An id
-  // the page asks for but the extractor never copied draws nothing at all,
+  // Every GAME id public/icon-map.js declares must be in the sprite too. An
+  // id the page asks for but the extractor never copied draws nothing at all,
   // which is the one icon failure that is invisible on screen.
   if (ICON_MAP) {
-    const undrawn = ICON_MAP.ids().filter(id => !ids.has(id));
+    const undrawn = ICON_MAP.gameIds().filter(id => !ids.has(id));
     if (undrawn.length)
       console.log("  note: icon-map.js asks for " + undrawn.length +
-        " icon(s) icons.svg does not have: " + undrawn.join(", ") +
+        " game icon(s) icons.svg does not have: " + undrawn.join(", ") +
         " - re-run extract-icons.js");
-    else console.log("  ok: all " + ICON_MAP.ids().length + " icons the GUI asks for by name are present");
+    else console.log("  ok: all " + ICON_MAP.gameIds().length + " game icons the GUI asks for by name are present");
   }
+}
+
+// public/icons-local.svg holds what the advisor draws itself for things the
+// game ships no artwork for. Unlike icons.svg it is in the repo, so anything
+// missing from it is a bug and not a "run the extractor" note.
+const LOCAL_ICONS = path.join(PUBLIC_DIR, "icons-local.svg");
+if (!fs.existsSync(LOCAL_ICONS)) {
+  fail("public/icons-local.svg is missing (it is committed, not generated)");
+} else {
+  const svg = fs.readFileSync(LOCAL_ICONS, "utf8");
+  const ids = new Set([...svg.matchAll(/<symbol[^>]*id="([^"]+)"/g)].map(m => m[1]));
+  const missing = ICON_MAP ? ICON_MAP.localIds().filter(id => !ids.has(id)) : [];
+  const stray = [...ids].filter(id => !ICON_MAP || !ICON_MAP.LOCAL_IDS.has(id));
+  if (missing.length) fail("icons-local.svg has no symbol for: " + missing.join(", "));
+  else console.log("  ok: icons-local.svg draws all " + ids.size + " advisor icon(s) (" +
+    Math.round(svg.length / 1024) + " KB)");
+  if (stray.length) fail("icons-local.svg has symbols icon-map.js does not declare: " + stray.join(", "));
 }
 
 // 4. index.html must reference the stylesheet and all scripts.

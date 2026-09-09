@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+<!-- Icons the advisor draws itself, for things the game ships no artwork for.
+     Unlike public/icons.svg (extracted from your game install and gitignored)
+     these are ours, so they live in the repo. Palette and 60x60 viewBox are
+     taken from the game's own "Clones" symbol, which sits next to this one on
+     the Droids & Clones tab. -->
+<symbol fill="none" viewBox="0 0 60 60" id="advisor_droid" xmlns="http://www.w3.org/2000/svg">
+  <!-- ground shadow -->
+  <ellipse cx="30" cy="53.5" rx="11" ry="2.4" fill="#212121" opacity=".55"/>
+  <!-- antenna -->
+  <path fill="#767576" d="M29.2 6.5h1.6v5.2h-1.6z"/>
+  <circle cx="30" cy="5.6" r="2" fill="#EBAC4C"/>
+  <circle cx="29.4" cy="5" r=".8" fill="#F7DFA6"/>
+  <!-- side sensor pods -->
+  <path fill="#494A4E" d="M13.4 18.6c0-1 .8-1.8 1.8-1.8h3.6v8.8h-3.6a1.8 1.8 0 0 1-1.8-1.8z"/>
+  <path fill="#3C3D40" d="M15.6 21.4h3.2v4.2h-3.2z"/>
+  <path fill="#494A4E" d="M46.6 18.6c0-1-.8-1.8-1.8-1.8h-3.6v8.8h3.6a1.8 1.8 0 0 0 1.8-1.8z"/>
+  <path fill="#3C3D40" d="M41.2 21.4h3.2v4.2h-3.2z"/>
+  <!-- head shell -->
+  <path fill="#2E72D4" d="M18.2 18a6 6 0 0 1 6-6h11.6a6 6 0 0 1 6 6v9.4a4 4 0 0 1-4 4H22.2a4 4 0 0 1-4-4z"/>
+  <path fill="#1A59BC" d="M30 12h5.8a6 6 0 0 1 6 6v9.4a4 4 0 0 1-4 4H30z"/>
+  <path fill="#0742A1" d="M37.4 12.6a6 6 0 0 1 4.4 5.4v9.4a4 4 0 0 1-4 4h-2.6a4 4 0 0 0 4-4V18a6 6 0 0 0-1.8-5.4z"/>
+  <path fill="#A4A3A3" d="M24.2 12h11.6a6 6 0 0 1 5.7 4.1H18.5A6 6 0 0 1 24.2 12z"/>
+  <path fill="#F0EFEF" d="M24.2 12.9h6.2c-3 .3-5.2 1.4-6.6 3.2h-5.3a6 6 0 0 1 5.7-3.2z"/>
+  <!-- visor -->
+  <path fill="#1E304A" d="M21.4 19.2a2.6 2.6 0 0 1 2.6-2.6h12a2.6 2.6 0 0 1 2.6 2.6v5.4a2.6 2.6 0 0 1-2.6 2.6H24a2.6 2.6 0 0 1-2.6-2.6z"/>
+  <path fill="#2F323C" d="M30 16.6h6a2.6 2.6 0 0 1 2.6 2.6v5.4a2.6 2.6 0 0 1-2.6 2.6h-6z"/>
+  <!-- eye -->
+  <circle cx="30" cy="21.9" r="3.4" fill="#3DBDF7"/>
+  <circle cx="30" cy="21.9" r="1.7" fill="#F0EFEF"/>
+  <path fill="#3DBDF7" opacity=".3" d="M23.6 19.7h1.3v4.4h-1.3zM35.1 19.7h1.3v4.4h-1.3z"/>
+  <path fill="#073682" opacity=".55" d="M18.2 28.6h23.6v2.8a4 4 0 0 1-4 4H22.2a4 4 0 0 1-4-4z"/>
+  <!-- neck -->
+  <path fill="#494A4E" d="M26.6 31.4h6.8v3h-6.8z"/>
+  <path fill="#3C3D40" d="M30 31.4h3.4v3H30z"/>
+  <!-- arms with grippers -->
+  <path fill="#767576" d="M20.6 34.4h-4.2a2 2 0 0 0-2 2v6.2h3.4v-4.8h2.8z"/>
+  <path fill="#494A4E" d="M13.1 42.2h4.9v2.6h-4.9zM12.5 45h2.2v3.4h-2.2zM16.4 45h2.2v3.4h-2.2z"/>
+  <path fill="#767576" d="M39.4 34.4h4.2a2 2 0 0 1 2 2v6.2h-3.4v-4.8h-2.8z"/>
+  <path fill="#494A4E" d="M42 42.2h4.9v2.6H42zM41.4 45h2.2v3.4h-2.2zM45.3 45h2.2v3.4h-2.2z"/>
+  <!-- torso -->
+  <path fill="#2E72D4" d="M21.4 36.6a2.6 2.6 0 0 1 2.6-2.6h12a2.6 2.6 0 0 1 2.6 2.6v9a2.6 2.6 0 0 1-2.6 2.6H24a2.6 2.6 0 0 1-2.6-2.6z"/>
+  <path fill="#1A59BC" d="M30 34h6a2.6 2.6 0 0 1 2.6 2.6v9a2.6 2.6 0 0 1-2.6 2.6h-6z"/>
+  <path fill="#073682" d="M35.2 34h.8a2.6 2.6 0 0 1 2.6 2.6v9a2.6 2.6 0 0 1-2.6 2.6h-.8z"/>
+  <path fill="#3DBDF7" opacity=".35" d="M24 34h1.4v14H24a2.6 2.6 0 0 1-2.6-2.6v-8.8A2.6 2.6 0 0 1 24 34z"/>
+  <!-- storage canister on the chest -->
+  <path fill="#EBAC4C" d="M24.8 37.2h10.4v8H24.8z"/>
+  <path fill="#C8893C" d="M30 37.2h5.2v8H30z"/>
+  <path fill="#F7DFA6" d="M25.9 38.3h2v5.8h-2z"/>
+  <path fill="#494A4E" d="M24 36.4h12v1.4H24zM24 44.8h12v1.4H24z"/>
+  <!-- thruster glow -->
+  <path fill="#3DBDF7" d="M26.2 48.2h7.6l-2.1 3.4h-3.4z"/>
+  <path fill="#F0EFEF" opacity=".7" d="M28.2 48.2h3.6l-1 2h-1.6z"/>
+</symbol>
+</svg>
