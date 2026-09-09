@@ -170,6 +170,16 @@ function techIcon(key, cls) { return IM() ? gameIcon(IM().tech(key), cls) : ''; 
 function resIcon(key, cls) { return IM() ? gameIcon(IM().res(key), cls) : ''; }
 // A card label carries a smaller glyph than a table row: .k is 11px text.
 function cardIcon(icon, label) { return icon ? icon + '<span class="k-label">' + label + '</span>' : label; }
+// An <h2>/<h3> with a glyph in front of it. Wrapping the text in its own
+// span is what keeps .inv-stat's gap between the two.
+function headIcon(icon, label, tag) {
+  const h = tag || 'h2';
+  if (!icon) return '<' + h + '>' + label + '</' + h + '>';
+  return '<' + h + '><span class="inv-stat">' + icon + '<span>' + label + '</span></span></' + h + '>';
+}
+// 'droids' and 'clones' are the keys IconMap already uses for the two unit
+// groups, so a kind is its own icon key.
+function unitIcon(kind, cls) { return resIcon(kind, cls); }
 
 // Two sprites: icons.svg is the game's artwork, extracted locally and absent
 // until you run extract-icons.js; icons-local.svg is the handful the advisor
@@ -680,7 +690,7 @@ function renderUnits(u) {
     const bd = sv.perDroid[0].breakdown;
     const uneven = sv.perDroid.some(d => d.dodge !== sv.perDroid[0].dodge);
     const tone = capTone(sv.avgDodge, 100);
-    html += '<h2>' + t('units.h_droid_survival') + '</h2>';
+    html += headIcon(unitIcon('droids'), t('units.h_droid_survival'));
     html += '<div class="sub">' + t('units.survival_note') + '</div>';
     html += '<div class="cards">';
     html += card(uneven ? t('units.dodge_chance_avg') : t('units.dodge_chance'), '<span style="color:' + tone.color + '">' + sv.avgDodge.toFixed(1) + '%</span>' +
@@ -749,7 +759,7 @@ function renderUnits(u) {
   html += '</div>';
 
   // --- clone damage impact ---
-  html += '<h2>' + t('units.h_clone_damage') + '</h2><div class="cards">';
+  html += headIcon(unitIcon('clones'), t('units.h_clone_damage')) + '<div class="cards">';
   html += card(t('units.total_multiplier'), cd.totalMultiplier.toFixed(3));
   html += card(t('units.plus1_all_skills'), t('units.pct_dmg', { n: cd.plusOnePctAll }));
   html += card(t('units.nth_clone_zero', { n: u.clones.count + 1 }), t('units.pct_dmg', { n: cd.eighthAtZero }));
@@ -778,25 +788,28 @@ function renderUnits(u) {
     }
     return cols;
   };
-  html += '<h2>' + t('units.h_clone_skills', { n: u.clones.count }) + '</h2><div class="sub">' + t('units.clone_skills_note') + '</div>';
+  html += headIcon(unitIcon('clones'), t('units.h_clone_skills', { n: u.clones.count })) +
+    '<div class="sub">' + t('units.clone_skills_note') + '</div>';
   html += tableHtml('tbl-clone-skills', u.clones.rows, unitSkillColumns(true, false));
   html += unitEmuSection('clones');
-  html += '<h2>' + t('units.h_droid_skills', { n: u.droids.count }) + '</h2><div class="sub">' + t('units.droid_skills_note') + '</div>';
+  html += headIcon(unitIcon('droids'), t('units.h_droid_skills', { n: u.droids.count })) +
+    '<div class="sub">' + t('units.droid_skills_note') + '</div>';
   html += tableHtml('tbl-droid-skills', u.droids.rows, unitSkillColumns(false, true));
   html += unitEmuSection('droids');
 
   // --- unit lists ---
-  const list = (title, units, skills) => {
-    let t = '<h2>' + title + '</h2><div class="list">';
+  const list = (title, kind, units, skills) => {
+    let t = headIcon(unitIcon(kind), title) + '<div class="list">';
     for (const un of units) {
-      t += '<div class="row"><span style="min-width:110px"><b>' + esc(un.name) + '</b></span>';
+      t += '<div class="row">' + unitIcon(kind, 'mat-tile xs') +
+        '<span style="min-width:110px"><b>' + esc(un.name) + '</b></span>';
       for (const s of skills) t += '<span>' + esc(skillLabel(s)) + ' <b>' + un[s] + '%</b></span>';
       t += '</div>';
     }
     return t + '</div>';
   };
-  html += list(t('units.your_clones'), u.clones.list, ['critical_chance', 'critical_damage', 'dual_shot']);
-  html += list(t('units.your_droids'), u.droids.list, ['efficiency', 'storage', 'maneuverability']);
+  html += list(t('units.your_clones'), 'clones', u.clones.list, ['critical_chance', 'critical_damage', 'dual_shot']);
+  html += list(t('units.your_droids'), 'droids', u.droids.list, ['efficiency', 'storage', 'maneuverability']);
   return html;
 }
 
@@ -906,9 +919,9 @@ function unitEmuHtml(kind) {
 
   // --- headline: what the whole plan costs against the credit pile ---
   let html = '<div class="cards">';
-  html += card(t('units.emu_all_card', { n: units.length, kind: unitGroupWord(kind, 'many') }),
+  html += card(cardIcon(unitIcon(kind, 'mat-tile xs'), t('units.emu_all_card', { n: units.length, kind: unitGroupWord(kind, 'many') })),
     '<span title="' + t('units.n_credits', { n: fmtN(emu.total) }) + '">' + fmtC(emu.total) + '</span>');
-  html += card(t('units.credits'), fmtC(credits));
+  html += card(cardIcon(resIcon('credits', 'mat-tile xs'), t('units.credits')), fmtC(credits));
   html += card(emu.affordable ? t('units.left_over') : t('units.short_by'),
     '<span style="color:' + (emu.affordable ? 'var(--good)' : 'var(--bad)') + '">' + fmtC(Math.abs(emu.leftover)) + '</span>' +
     (credits > 0 ? '<span style="font-size:11px;color:var(--dim)">' + t('units.plan_pct', { n: Math.round(emu.total / credits * 100) }) + '</span>' : ''));
@@ -969,7 +982,8 @@ function unitEmuHtml(kind) {
 
   // --- per unit: what each individual one costs to reach those targets ---
   const unitCols = [
-    { label: label, numeric: false, getValue: r => r.name, render: r => '<b>' + esc(r.name) + '</b>' },
+    { label: label, numeric: false, getValue: r => r.name,
+      render: r => '<span class="inv-stat">' + unitIcon(kind) + '<b>' + esc(r.name) + '</b></span>' },
   ].concat(skills.map(s => ({
     label: skillLabel(s), numeric: true, getValue: r => r.costs[s],
     render: r => r.costs[s] ? '<span title="' + fmtN(r.costs[s]) + '">' + fmtC(r.costs[s]) + '</span>'
@@ -997,7 +1011,7 @@ function unitEmuHtml(kind) {
 
 function unitEmuSection(kind) {
   const label = unitGroupWord(kind);
-  return '<h2>' + t('units.emu_title', { label: label }) + '</h2>' +
+  return headIcon(unitIcon(kind), t('units.emu_title', { label: label })) +
     '<div class="sub">' + t('units.emu_note') + '</div>' +
     '<div id="emu-' + kind + '">' + unitEmuHtml(kind) + '</div>';
 }
@@ -1168,9 +1182,9 @@ function renderPets(p) {
 function renderKorin(k) {
   const dustLimited = k.dustCostPerCapsule > 0 ? Math.floor(k.dust / k.dustCostPerCapsule) : 0;
   const limitedBy = k.capsules <= dustLimited ? t('korin.limited_capsule_stock') : t('korin.limited_dust');
-  let html = '<h2><span class="inv-stat">' + petIcon('Korin') + '<span>' + t('korin.title') + '</span></span></h2>';
+  let html = headIcon(petIcon('Korin'), t('korin.title'));
   html += '<div class="cards">';
-  html += card(t('korin.card_level'), k.level);
+  html += card(cardIcon(petIcon('Korin', 'mat-tile xs'), t('korin.card_level')), k.level);
   html += card(cardIcon(resIcon('dust', 'mat-tile xs'), t('korin.card_cost_per_capsule')), fmtC(k.dustCostPerCapsule) + ' <span style="font-size:11px;color:var(--dim)">' + t('korin.dust') + '</span>');
   html += card(cardIcon(resIcon('warp_capsule', 'mat-tile xs'), t('korin.card_capsule_stock')), k.capsules.toLocaleString() +
     ' <span style="font-size:11px;color:var(--dim)">' + t('korin.stock_split', { n: k.enhancedCapsules.toLocaleString() }) + '</span>');
@@ -1604,12 +1618,12 @@ function renderBase(b) {
   const stars = [b.location.current].concat(b.location.bookmarks).filter(s => s.star);
   const seen = {}; const options = [];
   for (const s of stars) { if (seen[s.star]) continue; seen[s.star] = true; options.push(s); }
-  html += card(t('base.card_star'), '<select class="pet-input" onchange="setBaseStar(this.value)">' +
+  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_star')), '<select class="pet-input" onchange="setBaseStar(this.value)">' +
     options.map(s => '<option value="' + esc(s.star) + '"' + (s.star === starName ? ' selected' : '') + '>' + esc(s.star) + t('base.star_option_rate', { n: s.rate }) + (s.name ? ' &middot; ' + esc(s.name) : '') + '</option>').join('') +
     '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est">' + t('base.best_known', { star: esc(b.location.best.star), rate: b.location.best.rate }) + (b.location.best.name ? t('base.best_known_at', { name: esc(b.location.best.name) }) : '') + '</span>' : ''));
   // Two formulas disagree by the star rate; show the range rather than pick a
   // side the client cannot settle. See ESTIMATES in public/base-math.js.
-  html += card(t('base.card_stellarium_day'),
+  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_day')),
     plan.stellariumPerDay.toFixed(1) +
     (plan.stellariumPerDayClient && plan.stellariumPerDayClient < plan.stellariumPerDay
       ? ' <span style="color:var(--warn)">&ndash; ' + plan.stellariumPerDayClient.toFixed(1) + '?</span>' : '') +
