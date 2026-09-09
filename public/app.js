@@ -148,6 +148,29 @@ function matIcon(name) {
   return '<span class="mat-tile"><svg aria-hidden="true"><use href="#' + esc(id) + '"></use></svg></span>';
 }
 
+// Everything else the game has artwork for: ship slots, activity tabs, NPC
+// factions, planet bodies, pets, technology skills and currencies.
+// public/icon-map.js decides WHICH sprite symbol each one uses; all this
+// does is turn an id into markup. Same rule as matIcon -- a missing sprite,
+// or a thing the game ships no icon for (droids), renders as nothing rather
+// than as a placeholder, because in every one of these places the icon sits
+// next to a label that already says what it is.
+function gameIcon(id, cls) {
+  if (!window.__iconsReady || !window.__iconIds || !id || !window.__iconIds.has(id)) return '';
+  return '<span class="' + (cls || 'mat-tile') + '"><svg aria-hidden="true"><use href="#' +
+    esc(id) + '"></use></svg></span>';
+}
+const IM = () => window.IconMap || null;
+function slotIcon(slot, cls) { return IM() ? gameIcon(IM().slot(slot), cls) : ''; }
+function actIcon(act, cls) { return IM() ? gameIcon(IM().activity(act), cls) : ''; }
+function npcIcon(npc, cls) { return IM() ? gameIcon(IM().npc(npc), cls) : ''; }
+function bodyIcon(body, cls) { return IM() ? gameIcon(IM().body(body), cls) : ''; }
+function petIcon(name, cls) { return IM() ? gameIcon(IM().pet(name), cls) : ''; }
+function techIcon(key, cls) { return IM() ? gameIcon(IM().tech(key), cls) : ''; }
+function resIcon(key, cls) { return IM() ? gameIcon(IM().res(key), cls) : ''; }
+// A card label carries a smaller glyph than a table row: .k is 11px text.
+function cardIcon(icon, label) { return icon ? icon + '<span class="k-label">' + label + '</span>' : label; }
+
 function loadIcons() {
   return fetch('/icons.svg').then(r => (r.ok ? r.text() : null)).then(svg => {
     if (!svg) return;
@@ -264,7 +287,7 @@ function renderShipItemAdvisor(si) {
   let html = '';
   const cols = [
     { label: t('ship.col_slot'), numeric: false, getValue: it => it.slot,
-      render: it => '<b>' + esc(shipSlotLabel(it.slot)) + '</b>' },
+      render: it => '<span class="inv-stat">' + slotIcon(it.slot) + '<b>' + esc(shipSlotLabel(it.slot)) + '</b></span>' },
     { label: t('ship.col_item'), numeric: false, getValue: it => it.name,
       render: it => esc(it.name) + ' <span style="color:' + dotColor(it.rarity) + '">(' + esc(rarityLabel(it.rarity)) + ')</span>' +
         (it.enhanced ? ' <span class="badge b-ok">' + t('ship.enhanced') + '</span>' : '') +
@@ -288,7 +311,7 @@ function renderShipItemAdvisor(si) {
   for (const it of si.items) {
     for (const r of it.recommendations) {
       any = true;
-      html += '<div class="row"><b>' + esc(shipSlotLabel(it.slot)) + '</b><span>' + esc(r) + '</span></div>';
+      html += '<div class="row">' + slotIcon(it.slot, 'mat-tile xs') + '<b>' + esc(shipSlotLabel(it.slot)) + '</b><span>' + esc(r) + '</span></div>';
     }
   }
   if (!any) html += '<div class="empty-note">' + t('ship.no_recommendations') + '</div>';
@@ -297,9 +320,9 @@ function renderShipItemAdvisor(si) {
   const c = si.cooldown;
   html += '<h3 style="font-size:14px;color:var(--accent);margin:14px 0 8px">' + t('ship.engine_cooldown') + '</h3><div class="cards">';
   html += card(t('ship.total_reduction'), c.d + '%' + (c.componentBreakdown.globalBoost ? ' <span style="font-size:11px;color:var(--dim)">' + t('ship.wo_boost_pct', {n: c.dBase}) + '</span>' : ''));
-  html += card(t('ship.engine_value'), (c.componentBreakdown.engineValue / 100).toFixed(2) + '% <span style="font-size:11px;color:var(--dim)">' + t('ship.value_raw', {n: c.componentBreakdown.engineValue}) + '</span>');
+  html += card(cardIcon(slotIcon('engine_slot', 'mat-tile xs'), t('ship.engine_value')), (c.componentBreakdown.engineValue / 100).toFixed(2) + '% <span style="font-size:11px;color:var(--dim)">' + t('ship.value_raw', {n: c.componentBreakdown.engineValue}) + '</span>');
   html += card(t('ship.cooldown_mods'), '+' + c.componentBreakdown.mods + '%');
-  html += card(t('ship.korin_equipped'), '+' + c.componentBreakdown.korin + '%');
+  html += card(cardIcon(petIcon('Korin', 'mat-tile xs'), t('ship.korin_equipped')), '+' + c.componentBreakdown.korin + '%');
   if (c.componentBreakdown.globalBoost) {
     html += card(t('ship.global_boost'), '+' + c.componentBreakdown.globalBoost + '% <span style="font-size:11px;color:var(--dim)">' + t('ship.boost_tier_left', {tier: c.componentBreakdown.globalBoostTier, hours: c.componentBreakdown.globalBoostHoursLeft}) + '</span>');
   }
@@ -332,15 +355,17 @@ function renderGear(gear) {
   html += '<div class="grid">';
   for (const it of gear) {
     if (it.empty) {
-      html += '<div class="item"><h3>' + esc(gearSlotLabel(it.slot)) + '</h3><div class="meta">' + t('gear.no_item_equipped') + '</div></div>';
+      html += '<div class="item"><h3><span class="inv-stat">' + slotIcon(it.slot) + '<span>' + esc(gearSlotLabel(it.slot)) + '</span></span></h3>' +
+        '<div class="meta">' + t('gear.no_item_equipped') + '</div></div>';
       continue;
     }
-    html += '<div class="item"><h3>' + esc(it.name) + '</h3>';
+    html += '<div class="item"><h3><span class="inv-stat">' + slotIcon(it.slot) + '<span>' + esc(it.name) + '</span></span></h3>';
     html += '<div class="meta">' + esc(gearSlotLabel(it.slot)) + ' &middot; ' + esc(statCatLabel(it.category)) + ' &middot; ' + t('gear.lvl_n', {n: it.level}) + ' ' + esc(rarityLabel(it.rarity)) + '</div>';
     for (const g of it.groups) {
       const full = g.filled >= g.slots;
       const style = g.inherited ? ' style="opacity:0.55"' : '';
-      html += '<div class="group"' + style + '><div class="group-head"><span>' + esc(actLabel(g.activity, it.slot)) + '</span>';
+      html += '<div class="group"' + style + '><div class="group-head"><span>' + actIcon(g.activity, 'mat-tile xs') +
+        esc(actLabel(g.activity, it.slot)) + '</span>';
       if (g.inherited) {
         html += '<span class="badge b-empty">' + t('gear.inherits_from', {name: esc(actLabel(g.inheritedFrom, it.slot))}) + '</span></div>';
       } else {
@@ -391,7 +416,8 @@ function renderInstalls(installs, freed, battleNote, gear, variant, doneSet, pre
   const acts = order.filter(a => byAct[a] || tabsInUse.has(a))
     .concat(Object.keys(byAct).filter(a => !order.includes(a)));
   for (const act of acts) {
-    html += '<div class="plan-group"><h3>' + t('installs.act_tab', {name: esc(actLabel(act))}) + '</h3><div class="list">';
+    html += '<div class="plan-group"><h3>' + actIcon(act, 'mat-tile xs') +
+      t('installs.act_tab', {name: esc(actLabel(act))}) + '</h3><div class="list">';
     if (byAct[act] && byAct[act].length) {
       byAct[act].forEach(a => {
         const key = installKey(variant, a);
@@ -401,7 +427,7 @@ function renderInstalls(installs, freed, battleNote, gear, variant, doneSet, pre
         html += '<input type="checkbox" class="donecheck" ' + (isDone ? 'checked' : '') +
           ' onchange="toggleDone(' + jsStr(key) + ', this.checked)">';
         html += '<span class="num">' + a.n + '.</span>';
-        html += '<b>' + esc(a.item) + '</b> ';
+        html += slotIcon(a.slot, 'mat-tile xs') + '<b>' + esc(a.item) + '</b> ';
         if (a.action === 'install') {
           html += t('installs.install') + ' ';
         } else {
@@ -449,7 +475,7 @@ function renderProjection(proj, battleBase) {
     const lvl = proj.npcLevels[npc];
     const d = proj.deltas[npc];
     const col = d > 0 ? 'var(--good)' : (d < 0 ? 'var(--bad)' : 'var(--dim)');
-    html += '<div class="card"><div class="k">' + esc(npcLabel(npc)) + '</div><div class="v">' +
+    html += '<div class="card"><div class="k">' + cardIcon(npcIcon(npc, 'mat-tile xs'), esc(npcLabel(npc))) + '</div><div class="v">' +
       (base !== null && base !== undefined ? base : '?') + ' &rarr; ' + lvl +
       ' <span style="font-size:12px;color:' + col + '">(' + (d >= 0 ? '+' : '') + d + ')</span></div></div>';
   }
@@ -470,7 +496,7 @@ function renderOverrideLosses(list) {
   if (!list || !list.length) return '';
   let html = '<h2>' + t('gear.override_losses_title') + '</h2><div class="list warnlist">';
   for (const o of list) {
-    html += '<div class="row"><b>' + esc(o.item) + '</b> &mdash; ' +
+    html += '<div class="row">' + slotIcon(o.slot, 'mat-tile xs') + '<b>' + esc(o.item) + '</b> &mdash; ' +
       t('gear.override_loss', {act: esc(actLabel(o.activity)), cur: esc(o.currentText), inh: esc(o.inheritedText)}) +
       ' &mdash; <span style="color:var(--bad)">' + t('gear.losing', {v: esc(o.lostText)}) + '</span>' +
       '</div>';
@@ -491,7 +517,8 @@ function renderContextTotals(ct) {
     // stats with no effect here are noise.
     const rows = ct[ctx] && ct[ctx].filter(r => r.relevant);
     if (!rows) continue;
-    html += '<div class="item"><h3 style="text-transform:capitalize">' + esc(actLabel(ctx)) + '</h3>';
+    html += '<div class="item"><h3 style="text-transform:capitalize"><span class="inv-stat">' + actIcon(ctx) +
+      '<span>' + esc(actLabel(ctx)) + '</span></span></h3>';
     if (!rows.length) {
       html += '<div class="empty-note">' + t('gear.no_bonuses_active') + '</div></div>';
       continue;
@@ -546,7 +573,8 @@ function renderMerges(plans, player, reqs, doneSet, prevKeys) {
   for (const p of plans) {
     const endTier = p.steps.length ? p.steps[p.steps.length - 1].to : null;
     html += '<div class="merge-plan"><h3><span class="inv-stat">' + catIcon(p.stat, endTier, null, true) +
-      '<span>' + esc(statLabel(p.stat)) + ' <span style="color:var(--dim)">(' + esc(actLabel(p.activity)) + ')</span>' +
+      '<span>' + esc(statLabel(p.stat)) + ' <span style="color:var(--dim)">(' +
+      actIcon(p.activity, 'mat-tile xs') + esc(actLabel(p.activity)) + ')</span>' +
       (p.chainGoal ? ' &mdash; ' + t('merges.goal', {goal: '<span style="color:var(--warn)">&rarr; ' + chainGoalText(p.chainGoal) + '</span>'}) : '') + '</span></span></h3>';
     for (const step of p.steps) {
       const sameTier = step.from === step.to ? t('merges.range_perfection') : '';
@@ -628,11 +656,11 @@ function renderUnits(u) {
   html += '<h2>' + t('units.h_droids_clones') + '</h2>';
   html += '<div class="sub">' + t('units.cost_note') + '</div>';
   html += '<div class="cards">';
-  html += card(t('units.credits'), fmtC(u.credits));
+  html += card(cardIcon(resIcon('credits', 'mat-tile xs'), t('units.credits')), fmtC(u.credits));
   const priceNote = g => ' <span style="font-size:11px;color:var(--dim)">' + t('units.next_price', { c: fmtC(g.nextPrice) }) +
     (g.priceSource === 'extrapolated' ? ' <span title="' + t('units.curve_title') + '">' + t('units.curve') + '</span>' : '') + '</span>';
   html += card(t('units.droids'), u.droids.count + priceNote(u.droids));
-  html += card(t('units.clones'), u.clones.count + priceNote(u.clones));
+  html += card(cardIcon(resIcon('clones', 'mat-tile xs'), t('units.clones')), u.clones.count + priceNote(u.clones));
   html += '</div>';
 
   // --- droid survival ---
@@ -998,7 +1026,7 @@ function renderTech(t) {
   html += '<h2>' + I18n.t('tech.title') + '</h2>';
   html += '<div class="sub">' + I18n.t('tech.cost_note') + '</div>';
   html += '<div class="cards">';
-  html += card(I18n.t('tech.card_quantum_cores'), t.quantumCores.toLocaleString());
+  html += card(cardIcon(resIcon('quantum_cores', 'mat-tile xs'), I18n.t('tech.card_quantum_cores')), t.quantumCores.toLocaleString());
   if (t.battle) html += card(I18n.t('tech.card_avg_npc_level'), t.battle.baselineAvg);
   if (t.maxOut) {
     html += card(I18n.t('tech.card_qc_to_max_all'), fmtC(t.maxOut.coresToMaxAll) + ' <span style="font-size:11px;color:var(--dim)">' + I18n.t('tech.maxed_of', { n: t.maxOut.maxedCount, total: t.maxOut.unlockedCount }) + '</span>');
@@ -1018,7 +1046,8 @@ function renderTech(t) {
         : I18n.t('tech.winrate_metric')) + ' ' +
       I18n.t('tech.no_measurable_gain_note', { n: t.battle.probeLevels ? Object.keys(t.battle.probeLevels).length : 8 }) + '</div>';
     const combatCols = [
-      { label: I18n.t('tech.col_skill'), numeric: false, getValue: r => r.key, render: r => '<b>' + esc(techBoostLabel(r.key)) + '</b>' },
+      { label: I18n.t('tech.col_skill'), numeric: false, getValue: r => r.key,
+        render: r => '<span class="inv-stat">' + techIcon(r.key) + '<b>' + esc(techBoostLabel(r.key)) + '</b></span>' },
       { label: I18n.t('common.level'), numeric: true, getValue: r => r.level, render: r => r.level },
       { label: I18n.t('tech.col_next_qc'), numeric: true, getValue: r => r.cost, render: r => I18n.t('tech.qc_amount', { n: r.cost }) },
       { label: I18n.t('tech.col_winrate'), numeric: true, getValue: r => r.winrateDelta || 0,
@@ -1035,7 +1064,7 @@ function renderTech(t) {
   if (t.allocation.length) {
     html += '<div class="list">';
     for (const a of t.allocation) {
-      html += '<div class="row"><span><b>' + esc(techBoostLabel(a.key)) + '</b>: ' + a.from + ' &rarr; ' + a.to + '</span><span class="gain">' + I18n.t('tech.qc_amount', { n: a.cost }) + '</span></div>';
+      html += '<div class="row">' + techIcon(a.key, 'mat-tile xs') + '<span><b>' + esc(techBoostLabel(a.key)) + '</b>: ' + a.from + ' &rarr; ' + a.to + '</span><span class="gain">' + I18n.t('tech.qc_amount', { n: a.cost }) + '</span></div>';
     }
     html += '<div class="sub">' + I18n.t('tech.leftover', { n: t.leftoverCores }) + '</div></div>';
   } else if (t.battle && t.battle.rows.length) {
@@ -1052,7 +1081,8 @@ function renderTech(t) {
 
   html += '<h2>' + I18n.t('tech.all_skills') + '</h2>';
   const skillCols = [
-    { label: I18n.t('tech.col_skill'), numeric: false, getValue: s => s.label, render: s => '<b>' + esc(techNameLabel(s.key, s.label)) + '</b>' },
+    { label: I18n.t('tech.col_skill'), numeric: false, getValue: s => s.label,
+      render: s => '<span class="inv-stat">' + techIcon(s.key) + '<b>' + esc(techNameLabel(s.key, s.label)) + '</b></span>' },
     { label: I18n.t('common.level'), numeric: true, getValue: s => s.level, render: s => s.level + (s.maxed ? ' <span class="badge b-ok">' + I18n.t('tech.badge_max') + '</span>' : '') },
     { label: I18n.t('tech.col_next_cost'), numeric: true, getValue: s => (s.locked || s.maxed) ? -1 : (s.costNext || 0),
       render: s => s.locked ? '-' : (s.maxed ? '-' : '<b>' + I18n.t('tech.qc_amount', { n: s.costNext }) + '</b>') },
@@ -1081,7 +1111,7 @@ function renderPets(p) {
   html += '<div class="cards">';
   html += card(t('pets.card_xp_tech'), p.techSkill + (p.techSkill >= 100 ? ' <span class="badge b-ok">' + t('pets.badge_max') + '</span>' : ''));
   html += card(t('pets.card_premium'), p.premiumActive ? t('pets.premium_active') + ' <span style="font-size:11px;color:var(--dim)">' + t('pets.premium_bonus') + '</span>' : t('pets.premium_inactive'));
-  html += card(t('pets.card_food_stock'), p.petFood.toLocaleString() + ' <span style="font-size:11px;color:var(--dim)">' + t('pets.food_burn', { n: p.petFoodPerDay, days: p.petFoodDays !== null ? t('pets.days_short', { n: p.petFoodDays }) : '-' }) + '</span>');
+  html += card(cardIcon(resIcon('pet_food', 'mat-tile xs'), t('pets.card_food_stock')), p.petFood.toLocaleString() + ' <span style="font-size:11px;color:var(--dim)">' + t('pets.food_burn', { n: p.petFoodPerDay, days: p.petFoodDays !== null ? t('pets.days_short', { n: p.petFoodDays }) : '-' }) + '</span>');
   html += card(t('pets.card_equipped'), p.pets.filter(function (x) { return x.equipped; }).length + ' / ' + p.pets.length);
   html += '</div>';
 
@@ -1089,7 +1119,8 @@ function renderPets(p) {
 
   html += '<h2>' + t('pets.all_pets') + '</h2>';
   const petCols = [
-    { label: t('pets.col_pet'), numeric: false, getValue: pet => pet.name, render: pet => '<b>' + esc(petBodyLabel(pet.name)) + '</b>' },
+    { label: t('pets.col_pet'), numeric: false, getValue: pet => pet.name,
+      render: pet => '<span class="inv-stat">' + petIcon(pet.name) + '<b>' + esc(petBodyLabel(pet.name)) + '</b></span>' },
     { label: t('pets.col_slot'), numeric: false, getValue: pet => pet.equipped ? pet.slotType : '~unequipped',
       render: pet => pet.equipped ? esc(petSlotLabel(pet.slotType)) : '<span class="badge b-empty">' + t('pets.badge_unequipped') + '</span>' },
     { label: t('pets.col_lvl'), numeric: true, getValue: pet => pet.level, render: pet => pet.level },
@@ -1126,15 +1157,15 @@ function renderPets(p) {
 function renderKorin(k) {
   const dustLimited = k.dustCostPerCapsule > 0 ? Math.floor(k.dust / k.dustCostPerCapsule) : 0;
   const limitedBy = k.capsules <= dustLimited ? t('korin.limited_capsule_stock') : t('korin.limited_dust');
-  let html = '<h2>' + t('korin.title') + '</h2>';
+  let html = '<h2><span class="inv-stat">' + petIcon('Korin') + '<span>' + t('korin.title') + '</span></span></h2>';
   html += '<div class="cards">';
   html += card(t('korin.card_level'), k.level);
-  html += card(t('korin.card_cost_per_capsule'), fmtC(k.dustCostPerCapsule) + ' <span style="font-size:11px;color:var(--dim)">' + t('korin.dust') + '</span>');
-  html += card(t('korin.card_capsule_stock'), k.capsules.toLocaleString() +
+  html += card(cardIcon(resIcon('dust', 'mat-tile xs'), t('korin.card_cost_per_capsule')), fmtC(k.dustCostPerCapsule) + ' <span style="font-size:11px;color:var(--dim)">' + t('korin.dust') + '</span>');
+  html += card(cardIcon(resIcon('warp_capsule', 'mat-tile xs'), t('korin.card_capsule_stock')), k.capsules.toLocaleString() +
     ' <span style="font-size:11px;color:var(--dim)">' + t('korin.stock_split', { n: k.enhancedCapsules.toLocaleString() }) + '</span>');
   html += card(t('korin.card_affordable_now'), k.affordableNow.toLocaleString() +
     ' <span style="font-size:11px;color:var(--dim)">' + t('korin.limited_by', { what: limitedBy }) + '</span>');
-  html += card(t('korin.card_fuel_per_enhanced'), (k.fuelPerEnhanced !== null ? k.fuelPerEnhanced.toLocaleString() : '?') +
+  html += card(cardIcon(resIcon('fuel', 'mat-tile xs'), t('korin.card_fuel_per_enhanced')), (k.fuelPerEnhanced !== null ? k.fuelPerEnhanced.toLocaleString() : '?') +
     ' ' + t('korin.fuel') + ' <span style="font-size:11px;color:var(--dim)">' + t('korin.fuel_multiplier', { x: k.fuelMultiplier.toFixed(1) }) + '</span>');
   html += card(t('korin.card_engine_cooldown'), '&minus;' + k.cooldownReductionPct + '%');
   html += '</div>';
@@ -1304,7 +1335,10 @@ function materialCols(showFarm) {
   ];
   if (showFarm) {
     cols.push({ label: t('mat.col_farm'), numeric: false, getValue: r => r.npc || '',
-      render: r => r.npc ? (esc(npcLabel(r.npc)) + ' (' + esc(bodyLabel(r.location)) + ')') : '-' });
+      render: r => r.npc
+        ? ('<span class="inv-stat">' + npcIcon(r.npc, 'mat-tile xs') + '<span>' + esc(npcLabel(r.npc)) + '</span>' +
+           bodyIcon(r.location, 'mat-tile xs') + '<span>' + esc(bodyLabel(r.location)) + '</span></span>')
+        : '-' });
   }
   return cols;
 }
@@ -1388,7 +1422,7 @@ function renderLab(lab) {
 
   // --- cards ---
   html += '<div class="cards">';
-  html += card(t('lab.card_capsule_target'), '<input class="pet-input lab-input" type="number" min="1" value="' + capsules + '" onchange="setLabCapsules(this.value)"> ' + t('lab.capsules_in_stock', { n: fmtC(lab.capsulesInStock || 0) }));
+  html += card(cardIcon(resIcon('warp_capsule', 'mat-tile xs'), t('lab.card_capsule_target')), '<input class="pet-input lab-input" type="number" min="1" value="' + capsules + '" onchange="setLabCapsules(this.value)"> ' + t('lab.capsules_in_stock', { n: fmtC(lab.capsulesInStock || 0) }));
   html += card(t('lab.card_chain_time'), fmtHours(plan.hoursPipelined) +
     '<span style="font-size:11px;color:var(--dim)">' + t('lab.chain_time_note', { n: fmtHours(plan.hoursSequential) }) + '</span>');
   if (plan.binding) {
@@ -1490,7 +1524,7 @@ function renderLab(lab) {
   html += card(t('lab.card_after_founding'), fmtHours(after.hoursPipelined) + (after.binding ? '<span style="font-size:11px;color:var(--bad)">' + t('lab.binding_note', { name: esc(materialLabel(after.binding.name)) }) + '</span>' : ''));
   html += '</div>';
   if (shortRows.length) {
-    html += '<div class="list">' + shortRows.map(b => '<div class="row"><span><b>' + esc(materialLabel(b.name)) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
+    html += '<div class="list">' + shortRows.map(b => '<div class="row">' + matIcon(b.name) + '<span><b>' + esc(materialLabel(b.name)) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
   }
   return html;
 }
@@ -1622,12 +1656,13 @@ function renderBase(b) {
   }
   if (up.questsKnown === false) html += '<div class="sub">' + t('base.quests_hint') + '</div>';
   if (b.labPanelHint) html += '<div class="sub">' + t('base.lab_panel_hint') + '</div>';
-  if (b.location.bodies.length) html += '<div class="sub">' + t('base.body_xp', { list: b.location.bodies.map(x => esc(bodyLabel(x.type)) + (x.activity ? ' &rarr; ' + esc(itemSkillLabel(x.activity)) : '')).join(', ') }) + '</div>';
+  if (b.location.bodies.length) html += '<div class="sub">' + t('base.body_xp', { list: b.location.bodies.map(x =>
+    bodyIcon(x.type, 'mat-tile xs') + esc(bodyLabel(x.type)) + (x.activity ? ' &rarr; ' + esc(itemSkillLabel(x.activity)) : '')).join(', ') }) + '</div>';
 
   // --- live block ---
   if (b.live) {
     html += '<h2>' + t('base.h_base', { name: esc(b.live.name) }) + '</h2><div class="cards">';
-    html += card(t('base.card_stellarium_held'), String(b.live.stellarium));
+    html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_held')), String(b.live.stellarium));
     if (b.live.nextUnlock) html += card(t('base.card_next_unlock'), esc(moduleLabel(b.live.nextUnlock.name)) + '<span class="est">' + t('base.next_unlock_note', { cost: b.live.nextUnlock.cost, eta: b.live.nextUnlock.etaDays === 0 ? t('base.affordable_now') : t('base.eta_in', { days: fmtDays(b.live.nextUnlock.etaDays) }) }) + '</span>');
     html += '</div>';
     html += tableHtml('tbl-base-live', b.live.modules.filter(m => m.unlocked), [
@@ -1682,10 +1717,10 @@ function renderSummary(p, prevP) {
     const txt = (d > 0 ? '+' : '-') + fmtC(Math.abs(d));
     return ' <span style="color:' + col + ';font-size:11px;font-weight:700">' + txt + '</span>';
   };
-  return card(t('summary.crafting_lvl'), p.craftLevel + ' <span style="font-size:11px;color:var(--dim)">' + t('summary.xp', { cur: p.currentXp, target: p.targetXp }) + '</span>') +
-    card(t('summary.dust'), p.dust.toLocaleString() + delta('dust')) +
-    card(t('summary.catalyst_parts'), p.parts.toLocaleString() + delta('parts')) +
-    card(t('summary.quantum_cores'), p.qc.toLocaleString() + delta('qc')) +
+  return card(cardIcon(resIcon('crafting_level', 'mat-tile xs'), t('summary.crafting_lvl')), p.craftLevel + ' <span style="font-size:11px;color:var(--dim)">' + t('summary.xp', { cur: p.currentXp, target: p.targetXp }) + '</span>') +
+    card(cardIcon(resIcon('dust', 'mat-tile xs'), t('summary.dust')), p.dust.toLocaleString() + delta('dust')) +
+    card(cardIcon(resIcon('catalyst_parts', 'mat-tile xs'), t('summary.catalyst_parts')), p.parts.toLocaleString() + delta('parts')) +
+    card(cardIcon(resIcon('quantum_cores', 'mat-tile xs'), t('summary.quantum_cores')), p.qc.toLocaleString() + delta('qc')) +
     card(t('summary.installed'), p.installedCount) +
     card(t('summary.unequipped'), p.unequippedCount);
 }
@@ -1741,7 +1776,8 @@ function render(d) {
     if (d.battleBase) {
       html += '<h2>' + t('view.battle_benchmark') + '</h2><div class="sub">' + t('view.battle_benchmark_sub') + '</div>';
       html += '<div class="cards">' + Object.entries(d.battleBase).map(([npc, lvl]) =>
-        '<div class="card"><div class="k">' + esc(npcLabel(npc)) + '</div><div class="v">' + lvl + '</div></div>').join('') + '</div>';
+        '<div class="card"><div class="k">' + cardIcon(npcIcon(npc, 'mat-tile xs'), esc(npcLabel(npc))) +
+        '</div><div class="v">' + lvl + '</div></div>').join('') + '</div>';
     }
     html += '<h2>' + t('view.active_bonuses') + '</h2>';
     html += '<div class="sub">' + t('view.active_bonuses_sub') + '</div>';

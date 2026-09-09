@@ -78,8 +78,17 @@ for (const m of svg.matchAll(/<symbol\b[^>]*\bid="([^"]+)"[^>]*>/g)) {
 }
 
 const symbols = [];
-for (const [id, xml] of all) if (id.startsWith("catalyst_")) symbols.push({ id, xml });
+const taken = new Set();
+const take = (id) => {
+  if (taken.has(id) || !all.has(id)) return false;
+  taken.add(id);
+  symbols.push({ id, xml: all.get(id) });
+  return true;
+};
+
+for (const id of all.keys()) if (id.startsWith("catalyst_")) take(id);
 if (!symbols.length) fail("no catalyst_* symbols found in the sprite");
+const catalysts = symbols.length;
 
 // Materials and resources: rather than hardcode a list that drifts, take the
 // vocabulary the GUI already knows (the material.* keys in the catalogue) and
@@ -89,7 +98,6 @@ const norm = x => String(x).toLowerCase().replace(/[\s_-]+/g, "");
 const byNorm = new Map();
 for (const id of all.keys()) if (!byNorm.has(norm(id))) byNorm.set(norm(id), id);
 
-let materials = 0;
 const missing = [];
 try {
   const I18n = require(path.join(__dirname, "public", "i18n.js"));
@@ -99,17 +107,32 @@ try {
   for (const name of names) {
     const id = byNorm.get(norm(name));
     if (!id) { missing.push(name); continue; }
-    if (!symbols.some(sym => sym.id === id)) { symbols.push({ id, xml: all.get(id) }); materials++; }
+    take(id);
   }
 } catch (e) {
   console.error("  note: could not read the material vocabulary (" + e.message + ")");
 }
 if (missing.length) console.log("  no icon in the game for: " + missing.join(", "));
+const materials = symbols.length - catalysts;
+
+// Everything else the GUI draws -- ship slots, activity tabs, NPC factions,
+// planet bodies, pets, technology skills, currencies. public/icon-map.js is
+// the list; nothing here decides what to keep, so adding an icon to the GUI
+// is one edit in one file and a re-run of this script.
+const unknown = [];
+try {
+  const IconMap = require(path.join(__dirname, "public", "icon-map.js"));
+  for (const id of IconMap.ids()) if (!take(id) && !taken.has(id)) unknown.push(id);
+} catch (e) {
+  console.error("  note: could not read public/icon-map.js (" + e.message + ")");
+}
+if (unknown.length) console.log("  the GUI asks for icons the sprite does not have: " + unknown.join(", "));
+const others = symbols.length - catalysts - materials;
 
 const out = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">\n' +
   symbols.map(s => s.xml).join("\n") + "\n</svg>\n";
 const dest = path.join(__dirname, "public", "icons.svg");
 fs.writeFileSync(dest, out);
 console.log("wrote public/icons.svg — " + symbols.length + " icons (" +
-  (symbols.length - materials) + " catalyst stats, " + materials + " materials), " +
+  catalysts + " catalyst stats, " + materials + " materials, " + others + " other), " +
   (out.length / 1024).toFixed(0) + " KB");

@@ -7,6 +7,6 @@ snapshots/
 # subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
 
-# catalyst icons extracted from the local game install (game artwork,
-# not redistributed) -- regenerate with: node extract-icons.js
+# game icons extracted from the local game install (game artwork, not
+# redistributed) -- regenerate with: node extract-icons.js
 public/icons.svg

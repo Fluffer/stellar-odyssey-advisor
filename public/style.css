@@ -174,3 +174,18 @@
   width: 22px; height: 22px; flex: none; vertical-align: middle; }
 .mat-tile svg { width: 20px; height: 20px; display: block; }
 .merge-plan h3 .inv-stat { gap: 7px; }
+/* The same glyph beside 11px card labels and inside dense rows and headings,
+   where a 22px tile would tower over the text it belongs to. */
+.mat-tile.xs { width: 16px; height: 16px; }
+.mat-tile.xs svg { width: 15px; height: 15px; }
+/* Card labels: an optional icon to the left of the label text. */
+.card .k { display: flex; align-items: center; gap: 5px; }
+.card .k .k-label { min-width: 0; }
+/* Rows and headings align on the text baseline, which would leave a glyph
+   hanging below its line; centre the tiles instead. */
+.row .mat-tile, .group-head .mat-tile, .plan-group > h3 .mat-tile { align-self: center; }
+.group-head > span:not(.badge) { display: inline-flex; align-items: center; gap: 5px; }
+/* In a running sentence the glyph needs its own breathing room. */
+.sub .mat-tile { margin-right: 3px; }
+.plan-group > h3 { display: flex; align-items: center; gap: 6px; }
+.item h3 .inv-stat { gap: 7px; }

@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "i18n.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"]) {
+for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -58,6 +58,15 @@ try {
   console.log("  ok: unit-math.js loads as a module");
 } catch (e) {
   fail("unit-math.js does not load: " + e.message);
+}
+
+let ICON_MAP = null;
+try {
+  ICON_MAP = require(path.join(PUBLIC_DIR, "icon-map.js"));
+  if (typeof ICON_MAP.ids !== "function") throw new Error("ids missing");
+  console.log("  ok: icon-map.js loads as a module (" + ICON_MAP.ids().length + " declared icons)");
+} catch (e) {
+  fail("icon-map.js does not load: " + e.message);
 }
 
 let I18N = null;
@@ -112,11 +121,22 @@ if (!fs.existsSync(ICONS)) {
   if (stats.length && noIcon.length)
     console.log("  note: no icon for " + noIcon.join(", ") +
       " - re-run extract-icons.js after a game update");
+  // Everything public/icon-map.js declares must be in the sprite too. An id
+  // the page asks for but the extractor never copied draws nothing at all,
+  // which is the one icon failure that is invisible on screen.
+  if (ICON_MAP) {
+    const undrawn = ICON_MAP.ids().filter(id => !ids.has(id));
+    if (undrawn.length)
+      console.log("  note: icon-map.js asks for " + undrawn.length +
+        " icon(s) icons.svg does not have: " + undrawn.join(", ") +
+        " - re-run extract-icons.js");
+    else console.log("  ok: all " + ICON_MAP.ids().length + " icons the GUI asks for by name are present");
+  }
 }
 
 // 4. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
-for (const ref of ["/style.css", "/i18n.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
+for (const ref of ["/style.css", "/i18n.js", "/icon-map.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
   if (html.includes(ref)) console.log("  ok: index.html references " + ref);
   else fail("index.html does not reference " + ref);
 }

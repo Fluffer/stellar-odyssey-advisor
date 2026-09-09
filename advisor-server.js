@@ -47,6 +47,7 @@ const STATIC = {
   "/style.css": ["style.css", "text/css"],
   "/app.js": ["app.js", "application/javascript"],
   "/i18n.js": ["i18n.js", "application/javascript"],
+  "/icon-map.js": ["icon-map.js", "application/javascript"],
   "/icons.svg": ["icons.svg", "image/svg+xml"],
   "/pet-math.js": ["pet-math.js", "application/javascript"],
   "/lab-math.js": ["lab-math.js", "application/javascript"],
