@@ -1122,6 +1122,28 @@ function renderTech(t) {
   return html;
 }
 
+function petEffectText(e) {
+  const label = esc(t('peteffect.' + e.key));
+  if (e.pct !== undefined) {
+    // Korin's cooldown is the one negative: print a real minus, not a hyphen.
+    const v = e.pct < 0 ? '&minus;' + Math.abs(e.pct) : '+' + e.pct;
+    return t('pets.eff_pct', { label: label, v: v });
+  }
+  if (e.mult !== undefined) return t('pets.eff_mult', { label: label, v: e.mult.toFixed(2) });
+  if (e.flat !== undefined) return t('pets.eff_flat', { label: label, v: (e.flat < 0 ? '&minus;' : '+') + fmtN(Math.abs(e.flat)) });
+  return label;
+}
+// The whole Bonus cell. A pet that is not equipped grants nothing, so its
+// bonuses are dimmed rather than hidden -- you still want to see what you
+// would get for equipping it.
+function petEffectCell(pet) {
+  const eff = pet.effects || [];
+  if (!eff.length) return '<span style="color:var(--dim)">' + t('common.none') + '</span>';
+  const text = eff.map(petEffectText).join('<span class="dimtext"> &middot; </span>');
+  if (pet.equipped) return text;
+  return '<span style="opacity:.45" title="' + t('pets.bonus_inactive_title') + '">' + text + '</span>';
+}
+
 function fmtH(h) {
   if (h === null || h === undefined) return '-';
   if (h === Infinity) return t('pets.never');
@@ -1143,11 +1165,15 @@ function renderPets(p) {
   if (p.korin) html += renderKorin(p.korin);
 
   html += '<h2>' + t('pets.all_pets') + '</h2>';
+  html += '<div class="sub">' + t('pets.bonus_note') + '</div>';
   const petCols = [
     { label: t('pets.col_pet'), numeric: false, getValue: pet => pet.name,
       render: pet => '<span class="inv-stat">' + petIcon(pet.name) + '<b>' + esc(petBodyLabel(pet.name)) + '</b></span>' },
     { label: t('pets.col_slot'), numeric: false, getValue: pet => pet.equipped ? pet.slotType : '~unequipped',
       render: pet => pet.equipped ? esc(petSlotLabel(pet.slotType)) : '<span class="badge b-empty">' + t('pets.badge_unequipped') + '</span>' },
+    { label: t('pets.col_bonus'), numeric: false,
+      getValue: pet => (pet.effects && pet.effects[0] ? pet.effects[0].key : '~'),
+      render: petEffectCell },
     { label: t('pets.col_lvl'), numeric: true, getValue: pet => pet.level, render: pet => pet.level },
     { label: t('pets.col_xp'), numeric: true, getValue: pet => pet.currentXp, render: pet => pet.currentXp + '/' + pet.targetXp },
     { label: t('pets.col_boost'), numeric: true, getValue: pet => pet.boost, render: pet => pet.boost },

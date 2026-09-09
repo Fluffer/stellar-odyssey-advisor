@@ -56,9 +56,26 @@ describe("translation shape", () => {
   test("no Chinese string is left as its English original", () => {
     // Purely-symbolic strings (numbers, punctuation, entity-only) legitimately
     // match; anything with Latin letters that is byte-identical was skipped.
+    //
+    // A placeholder NAME and an HTML entity are part of the markup, not of the
+    // prose: "{label} {v}%" and "{label} &times;{v}" are format templates whose
+    // only words are the ones substituted in, and they are the same string in
+    // every language. Discount both before looking for real words, or the test
+    // demands a translation that cannot exist.
+    const prose = (s) => String(s).replace(/\{[^}]*\}/g, "").replace(/&[a-z]+;/gi, "");
     const same = Object.keys(I18n.CATALOG.en).filter(k =>
-      I18n.CATALOG.en[k] === I18n.CATALOG.zh[k] && /[A-Za-z]{4}/.test(I18n.CATALOG.en[k]));
+      I18n.CATALOG.en[k] === I18n.CATALOG.zh[k] && /[A-Za-z]{4}/.test(prose(I18n.CATALOG.en[k])));
     assert.deepEqual(same, [], "identical to the English text");
+  });
+
+  test("that exemption does not hide a genuinely untranslated string", () => {
+    // The strip above must not swallow real words that happen to sit next to a
+    // placeholder: this is the shape it is meant to keep catching.
+    const prose = (s) => String(s).replace(/\{[^}]*\}/g, "").replace(/&[a-z]+;/gi, "");
+    assert.ok(/[A-Za-z]{4}/.test(prose("burn {n}/day = {days}")));
+    assert.ok(/[A-Za-z]{4}/.test(prose("{label} &times;{v} total")));
+    assert.ok(!/[A-Za-z]{4}/.test(prose("{label} &times;{v}")));
+    assert.ok(!/[A-Za-z]{4}/.test(prose("{label} {v}%")));
   });
 });
 

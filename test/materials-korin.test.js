@@ -6,7 +6,7 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const { planMaterials } = require("../lib/materials.js");
-const { planPets } = require("../lib/pets.js");
+const { planPets, petEffects } = require("../lib/pets.js");
 
 describe("Korin dust cost formula", () => {
   test("golden values at levels 1, 13, 30", () => {
@@ -153,5 +153,67 @@ describe("planMaterials", () => {
     const cog = result.npcDrops.find(m => m.material === "cog");
     assert.equal(cog.neededAllUses, 0);
     assert.equal(cog.deficit, 0);
+  });
+});
+
+// The passive bonus each pet grants. These are not goldens off our own
+// implementation: every number is the one the game's PetsPage prints for that
+// pet, so a change here means the advisor has started disagreeing with the
+// game rather than merely changing.
+describe("pet effects match the game's own per-pet summary", () => {
+  const at = (name, level) => {
+    const out = {};
+    for (const e of petEffects(name, level)) out[e.key] = e.pct ?? e.mult ?? e.flat ?? "action";
+    return out;
+  };
+
+  test("the four boosters: activity currency L%, activity XP L*3%", () => {
+    // Game: `Credits ${L}% XP: ${L*3}%` and the same shape for the other three.
+    assert.deepEqual(at("Dragon", 14), { battling_credits: 14, battling_xp: 42, dungeon_damage_hp: 1.14 });
+    assert.deepEqual(at("Dog", 14), { gathering_resources: 14, gathering_xp: 42, dungeon_gathering: 1.14 });
+    assert.deepEqual(at("Cat", 14), { craft_min_range: 14, crafting_xp: 42, dungeon_crafting: 1.14 });
+    assert.deepEqual(at("Owl", 14), { cosmic_dust: 14, exploring_xp: 42, dungeon_exploring: 1.14 });
+  });
+
+  test("a booster's dungeon multiplier is 1 + L/100", () => {
+    // DungeonPage: `e *= 1 + pet.level / 100` while the pet is equipped.
+    assert.equal(at("Owl", 0).dungeon_exploring, 1);
+    assert.equal(at("Owl", 50).dungeon_exploring, 1.5);
+    assert.equal(at("Owl", 100).dungeon_exploring, 2);
+  });
+
+  test("the QoL pets", () => {
+    assert.deepEqual(at("Drone", 20), { drop_chance: 20 });          // Drop Chance +L%
+    assert.deepEqual(at("Quadruped", 20), { rarity_chance: 60 });    // Rarity Chance +L*3%
+    assert.deepEqual(at("Roller", 20), { squadron_tax: 20 });        // Tax bonus: L%
+    assert.deepEqual(at("Humanoid", 20), { salvage: "action" });     // no number, it is an action
+  });
+
+  test("the generators", () => {
+    assert.deepEqual(at("Darnex", 9), { stat_per_day: 9 });          // Stat per Day: +L
+    assert.deepEqual(at("Velari", 9), { pvp_stats: 450 });           // Stats: +L*50
+    assert.deepEqual(at("Selyn", 9), { enhance_success: 27 });       // L*3% per attempt
+    assert.deepEqual(at("Korin", 9), { capsule_enhance: "action", engine_cooldown: -9 });
+  });
+
+  test("a pet the game adds later reports no effects rather than throwing", () => {
+    assert.deepEqual(petEffects("Griffin", 10), []);
+  });
+
+  test("planPets attaches the effects at each pet's own level", () => {
+    const state = {
+      pets: {
+        pets: [{ _id: "a", name: "Owl", pet_type: "booster", level: 7, current_xp: 0, xpboost: 0, food: 100 }],
+        petSlots: [{ _id: "s1", pet: "a", pet_type: "booster", autofeed: false }],
+        petFood: 100,
+      },
+      commonResources: {},
+    };
+    const owl = planPets(state).pets[0];
+    assert.equal(owl.level, 7);
+    assert.deepEqual(owl.effects.map(e => e.key), ["cosmic_dust", "exploring_xp", "dungeon_exploring"]);
+    assert.equal(owl.effects[0].pct, 7);
+    assert.equal(owl.effects[1].pct, 21);
+    assert.equal(owl.effects[2].mult, 1.07);
   });
 });
