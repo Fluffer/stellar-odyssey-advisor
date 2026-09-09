@@ -151,6 +151,169 @@ if (!fs.existsSync(LOCAL_ICONS)) {
   if (stray.length) fail("icons-local.svg has symbols icon-map.js does not declare: " + stray.join(", "));
 }
 
+// Render every tab offline (lib/gui-render.js) and check three things the
+// static checks above cannot see:
+//
+//   1. the tab renders at all, in both languages;
+//   2. every <use href="#id"> resolves to a symbol one of the sprites has --
+//      an id nothing provides draws NOTHING, silently, which is the icon
+//      failure you cannot spot by looking at the page;
+//   3. no label NAMES a thing we have an icon for while drawing no icon.
+//
+// (3) is what stops a new table quietly reintroducing the bare-text rows the
+// icon sweep set out to remove. It looks only where a name IS the label --
+// card labels, the first cell of a table row, the leading name of a list row.
+// Headings are section furniture and prose is prose; an icon belongs on a
+// label, so neither is checked.
+//
+// Snapshots are gitignored, so a fresh clone has no data to render: that is a
+// note and not a failure, exactly like a missing icons.svg.
+const SNAP_DIR = path.join(__dirname, "snapshots");
+const snapshots = fs.existsSync(SNAP_DIR)
+  ? fs.readdirSync(SNAP_DIR).filter(f => /^\d.*\.json$/.test(f)).sort()
+  : [];
+if (!snapshots.length) {
+  console.log("  note: no snapshots/ to render - skipping the tab render and icon-label checks");
+} else if (!I18N) {
+  console.log("  note: i18n.js did not load - skipping the tab render checks");
+} else {
+  const { sandbox, TABS } = require("./lib/gui-render.js");
+  const snapshot = snapshots[snapshots.length - 1];
+  const data = JSON.parse(fs.readFileSync(path.join(SNAP_DIR, snapshot), "utf8"));
+
+  // --- 1 + 2: every tab renders, and every icon it asks for exists ---
+  // Also with the sprites taken away: the GUI must never depend on artwork
+  // that a fresh clone does not have.
+  // The three states a real install can be in. "Only the advisor's own" is
+  // what a fresh clone looks like before anyone runs extract-icons.js.
+  const LOCAL_ONLY = ICON_MAP ? new Set(ICON_MAP.localIds()) : new Set();
+  const STATES = [
+    ["with both sprites", undefined],
+    ["with only the advisor's own sprite", LOCAL_ONLY],
+    ["with no sprite at all", null],
+  ];
+  let renderFailures = 0;
+  const drawn = new Set();
+  for (const [what, iconIds] of STATES) {
+    let gui;
+    try {
+      gui = sandbox(data, iconIds === undefined ? {} : { iconIds });
+    } catch (e) {
+      fail("the GUI does not load " + what + ": " + e.message);
+      renderFailures++;
+      continue;
+    }
+    for (const lang of ["en", "zh"]) {
+      gui.setLang(lang);
+      for (const tab of TABS) {
+        let html;
+        try {
+          html = gui.render(tab);
+        } catch (e) {
+          fail(tab + " (" + lang + ", " + what + ") threw: " + e.message);
+          renderFailures++;
+          continue;
+        }
+        // render() catches its own errors and prints a banner instead.
+        if (/class="row" style="border-color:rgba\(224,91,91/.test(html)) {
+          fail(tab + " (" + lang + ", " + what + ") rendered its failure banner");
+          renderFailures++;
+        }
+        const used = [...html.matchAll(/<use href="#([^"]+)"/g)].map(m => m[1]);
+        used.forEach(id => drawn.add(id));
+        // gameIcon()/catIcon()/matIcon() all check the id before drawing, so
+        // this cannot fire today. It is here for the next <use> that gets
+        // written without going through them.
+        const unresolved = [...new Set(used.filter(id => !gui.iconIds || !gui.iconIds.has(id)))];
+        if (unresolved.length) {
+          fail(tab + " (" + lang + ", " + what + ") draws icons nothing provides: " + unresolved.join(", "));
+          renderFailures++;
+        }
+      }
+    }
+  }
+  if (!renderFailures) {
+    console.log("  ok: all " + TABS.length + " tabs render in en and zh, in each of the " +
+      STATES.length + " sprite states");
+    console.log("  ok: " + drawn.size + " distinct icons drawn, all resolve to a symbol");
+  }
+
+  // --- 3: labels that name an iconable thing but draw nothing ---
+  const en = I18N.CATALOG.en;
+  const vocab = new Set();
+  const addNamespace = pre => Object.keys(en)
+    .filter(k => k.startsWith(pre))
+    .forEach(k => vocab.add(en[k].toLowerCase()));
+  ["gearslot.", "act.", "npc.", "petbody.", "body.", "material.", "itemskill."].forEach(addNamespace);
+  ["droid", "droids", "clone", "clones", "credits", "quantum cores", "cosmic dust",
+    "stellarium", "warp capsule", "pet food", "catalyst parts", "fuel", "korin"]
+    .forEach(w => vocab.add(w));
+  const TERMS = [...vocab].filter(w => w && w.length > 2).sort((a, b) => b.length - a.length);
+
+  // Base and laboratory buildings read as materials because a material is in
+  // the building's name ("Stellarium miner", "Fuel facility"). The game ships
+  // no module artwork at all, so they are not a gap.
+  const MODULES = new Set(Object.keys(en)
+    .filter(k => k.startsWith("module."))
+    .map(k => en[k].toLowerCase()));
+  // Labels that name something iconable and stay plain on purpose.
+  const PLAIN_ON_PURPOSE = [
+    // Cards under an already-iconned "Clone damage impact" heading: repeating
+    // one glyph down a card row is noise, not information.
+    /^\+\d+(st|nd|rd|th) clone @/i,
+  ];
+
+  const isWord = c => c >= "a" && c <= "z";
+  const namesSomething = (txt) => {
+    const hay = " " + txt.toLowerCase() + " ";
+    return TERMS.find(term => {
+      let i = hay.indexOf(term);
+      while (i >= 0) {
+        if (!isWord(hay[i - 1]) && !isWord(hay[i + term.length])) return true;
+        i = hay.indexOf(term, i + 1);
+      }
+      return false;
+    });
+  };
+  const textOf = h => h.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
+
+  const REGIONS = [
+    ["card label", /<div class="k">([\s\S]*?)<\/div>/g],
+    ["table cell", /<td[^>]*>([\s\S]*?)<\/td>/g],
+    ["list row", /<div class="row[^"]*">([\s\S]*?)(?=<\/div>)/g],
+  ];
+  const gaps = new Map();
+  const guiEn = sandbox(data, {});
+  guiEn.setLang("en");
+  for (const tab of TABS) {
+    let html;
+    try { html = guiEn.render(tab); } catch (e) { continue; }
+    for (const [kind, re] of REGIONS) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(html))) {
+        const inner = m[1];
+        if (inner.includes("<use href=")) continue;             // already drawn
+        if (kind === "table cell" && !inner.includes("<b>")) continue; // a value, not a name
+        const txt = textOf(inner);
+        if (!txt || txt.length > 70) continue;
+        if (MODULES.has(txt.toLowerCase())) continue;
+        if (PLAIN_ON_PURPOSE.some(rx => rx.test(txt))) continue;
+        const term = namesSomething(txt);
+        if (!term) continue;
+        const key = tab + " " + kind + ' "' + txt + '"';
+        if (!gaps.has(key)) gaps.set(key, term);
+      }
+    }
+  }
+  if (gaps.size) {
+    fail("labels that name something the GUI has an icon for, but draw none:\n" +
+      [...gaps].map(([where, term]) => "        " + where + "  [" + term + "]").join("\n"));
+  } else {
+    console.log("  ok: every card, row and named cell that could carry an icon does");
+  }
+}
+
 // 4. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
 for (const ref of ["/style.css", "/i18n.js", "/icon-map.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
