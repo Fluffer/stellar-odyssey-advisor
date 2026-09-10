@@ -16,6 +16,13 @@
 //   Unequipped pets: food frozen, no XP gain.
 //   Slot is occupied iff slot.pet is set (server keeps a stale pet id only
 //   while empty - getAvailableSlot filters on !pet).
+//
+// Wrapped in a function: in the browser every one of these files is a classic
+// <script> sharing ONE global scope, so a top-level `function levelCost` here
+// and another in a sibling file silently overwrite each other (lab-math's
+// 1.15M x level was replaced by base-math's module curve at call time).
+// Only window.PetMath / module.exports leave this scope.
+(function () {
 const PET_XP_GROW = 1.31;
 const PET_PREMIUM_BONUS = 10;
 const PET_FOOD_DECAY = 5;
@@ -99,3 +106,4 @@ const PetMath = {
 };
 if (typeof module !== "undefined" && module.exports) module.exports = PetMath;
 if (typeof window !== "undefined") window.PetMath = PetMath;
+})();

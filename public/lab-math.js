@@ -12,6 +12,13 @@
 //   - One queue per building (serial); the slot pool is global.
 //   - Inputs are consumed at queue time; production keeps running while
 //     unclaimed; Claim has a 10-minute cooldown per queue.
+//
+// Wrapped in a function: in the browser every one of these files is a classic
+// <script> sharing ONE global scope, so a top-level `function levelCost` here
+// and another in a sibling file silently overwrite each other (lab-math's
+// 1.15M x level was replaced by base-math's module curve at call time).
+// Only window.LabMath / module.exports leave this scope.
+(function () {
 const SPEED_INPUT_MULT = [1, 2.6, 4.5, 7, 10.5, 15.4, 22.7, 33.8, 50.9, 77.7];
 const LEVEL_COST_BASE = 1150000;
 const TIMER_FLOOR = 5;
@@ -126,6 +133,23 @@ function costToFloor(level, n) {
   if (n <= 0) return 0;
   return LEVEL_COST_BASE * (n * level + (n * (n + 1)) / 2);
 }
+// The level at which a building's timer reaches the 5 s floor; levels past
+// it buy nothing.
+function floorLevel(baseTimer) {
+  return Math.max(0, Math.round(((baseTimer || 0) - TIMER_FLOOR) / TIMER_STEP));
+}
+// Credits to take a building from level `from` to level `to` (0 if to <= from).
+function upgradeCost(from, to) {
+  return costToFloor(from || 0, Math.max(0, (to || 0) - (from || 0)));
+}
+// How many whole levels above `level` a `budget` of credits buys.
+function levelsAffordable(level, budget) {
+  const b = Number(budget);
+  if (!isFinite(b) || b <= 0) return 0;
+  let n = 0;
+  while (costToFloor(level, n + 1) <= b && n < 100000) n++;
+  return n;
+}
 
 // Core plan: expansion + per-building timing + raw coverage + the two chain
 // estimates. Pure; `opts.levelOverrides` / `opts.speed` let ROI and speed
@@ -140,12 +164,27 @@ function planCore(chain, demands, stocks, opts) {
   for (const [k, v] of Object.entries(stocks || {})) stockOf[normName(k)] = Math.max(0, Number(v) || 0);
 
   // Speed multiplies the inputs of specified buildings: fold it into the expansion
-  // by scaling those buildings' `input` before expanding.
-  const speedList = speed ? (Array.isArray(speed.buildings) ? speed.buildings : (speed.building ? [speed.building] : [])) : [];
-  const speedX = speed ? Math.min(10, Math.max(1, speed.x)) : 1;
+  // by scaling those buildings' `input` before expanding. Two shapes:
+  // `{ buildings: [...], x }` (one multiplier for a group, used by the ROI
+  // and speed analysis) or `{ byBuilding: { name: x } }` (the emulator, a
+  // multiplier per building). x1 is "no multiplier" and is skipped.
+  const speedOf = {};
+  if (speed) {
+    if (speed.byBuilding) {
+      for (const [n, x] of Object.entries(speed.byBuilding)) {
+        const xi = Math.min(10, Math.max(1, Math.floor(Number(x) || 1)));
+        if (xi > 1) speedOf[n] = xi;
+      }
+    } else {
+      const list = Array.isArray(speed.buildings) ? speed.buildings : (speed.building ? [speed.building] : []);
+      const xi = Math.min(10, Math.max(1, Math.floor(Number(speed.x) || 1)));
+      if (xi > 1) for (const n of list) speedOf[n] = xi;
+    }
+  }
+  const speedList = Object.keys(speedOf);
   const chainUsed = speedList.length ? {
-    list: chain.list.map(b => speedList.includes(b.name)
-      ? { ...b, input: b.input * SPEED_INPUT_MULT[speedX - 1] }
+    list: chain.list.map(b => speedOf[b.name]
+      ? { ...b, input: b.input * SPEED_INPUT_MULT[speedOf[b.name] - 1] }
       : b),
     byProduct: {},
   } : chain;
@@ -157,7 +196,7 @@ function planCore(chain, demands, stocks, opts) {
     const level = overrides[b.name] !== undefined ? overrides[b.name] : b.level;
     const unitsToRun = ex.runs[b.name] || 0;
     const timerNow = timerAt(b.timer, level);
-    const div = speedList.includes(b.name) ? speedX : 1;
+    const div = speedOf[b.name] || 1;
     const seconds = unitsToRun * timerNow / div;
     const inputs = b.inputs.map(inp => {
       const needed = unitsToRun * b.input;
@@ -170,7 +209,7 @@ function planCore(chain, demands, stocks, opts) {
     });
     return {
       name: b.name, stage: stageOf(chainUsed, b.product), level, unitsToRun, timerNow,
-      seconds, hours: seconds / 3600, inputs,
+      speedX: div, seconds, hours: seconds / 3600, inputs,
     };
   });
 
@@ -295,10 +334,135 @@ function planTarget(chain, demands, stocks, opts) {
   return { ...base, upgradeRoi, criticalGroup, groupRoi, speed };
 }
 
+
+// ---- production emulator ----
+// "How long does a given amount take, and what do upgrades do to that?"
+// A scenario is a per-building level map and a per-building speed map laid
+// over the live chain; the answer is the baseline plan (live levels, no
+// speed) next to the scenario plan, with the credits the levels cost.
+//
+// Stock of everything the chain itself produces, zeroed: "from scratch"
+// timing, as if no intermediate were on the shelf. Raw resources keep their
+// stock so coverage still says what you can afford.
+function stripIntermediates(chain, stocks) {
+  const out = { ...(stocks || {}) };
+  for (const b of chain.list) out[b.product] = 0;
+  return out;
+}
+
+// Scenario levels never fall below the live level (a building cannot be
+// downgraded) and never exceed the floor level (nothing to gain past it).
+function clampScenarioLevels(chain, levels) {
+  const out = {};
+  for (const b of chain.list) {
+    const live = b.level || 0;
+    const raw = levels && levels[b.name] !== undefined ? Number(levels[b.name]) : live;
+    const want = isFinite(raw) ? Math.floor(raw) : live;
+    const cap = Math.max(live, floorLevel(b.timer));
+    out[b.name] = Math.min(cap, Math.max(live, want));
+  }
+  return out;
+}
+
+// scenario: { levels: {name: level}, speeds: {name: x}, useStock: bool }
+// opts:     planCore options (freeSlots, netTopLevel)
+function emulateProduction(chain, demands, stocks, scenario, opts) {
+  scenario = scenario || {};
+  opts = opts || {};
+  const stockUsed = scenario.useStock === false ? stripIntermediates(chain, stocks) : (stocks || {});
+  const levels = clampScenarioLevels(chain, scenario.levels);
+  const speeds = {};
+  for (const [n, x] of Object.entries(scenario.speeds || {})) {
+    const xi = Math.min(10, Math.max(1, Math.floor(Number(x) || 1)));
+    if (xi > 1) speeds[n] = xi;
+  }
+  const base = planCore(chain, demands, stockUsed, opts);
+  const plan = planCore(chain, demands, stockUsed, { ...opts, levelOverrides: levels, speed: { byBuilding: speeds } });
+
+  let upgradeCostTotal = 0;
+  const buildings = chain.list.map(src => {
+    const b0 = base.buildings.find(x => x.name === src.name);
+    const b1 = plan.buildings.find(x => x.name === src.name);
+    // A level on a building this product never runs buys nothing here, so
+    // it is not billed: the total is the price of the rows on screen.
+    const cost = b1.unitsToRun > 0 ? upgradeCost(src.level || 0, levels[src.name]) : 0;
+    upgradeCostTotal += cost;
+    const extraInputs = b1.inputs.map(i => {
+      const was = b0.inputs.find(w => w.name === i.name);
+      return { name: i.name, extra: i.needed - (was ? was.needed : 0) };
+    }).filter(e => e.extra > 0);
+    return {
+      name: src.name, stage: b1.stage, unitsToRun: b1.unitsToRun,
+      levelNow: src.level || 0, level: levels[src.name], floorLevel: floorLevel(src.timer),
+      levelsBought: levels[src.name] - (src.level || 0), upgradeCost: cost,
+      speedX: b1.speedX,
+      timerNow: b0.timerNow, timer: b1.timerNow,
+      hoursNow: b0.hours, hours: b1.hours,
+      inputs: b1.inputs, extraInputs,
+      critical: false,
+    };
+  });
+  const running = buildings.filter(b => b.unitsToRun > 0);
+  const maxHours = running.reduce((m, b) => Math.max(m, b.hours), 0);
+  for (const b of running) b.critical = maxHours > 0 && b.hours >= maxHours - TIE_EPS;
+
+  const hoursSaved = Math.max(0, base.hoursPipelined - plan.hoursPipelined);
+  return {
+    buildings, levels, speeds, base, plan,
+    hoursNow: base.hoursPipelined, hours: plan.hoursPipelined,
+    hoursSequentialNow: base.hoursSequential, hoursSequential: plan.hoursSequential,
+    hoursSaved: hoursSaved < TIE_EPS ? 0 : hoursSaved,
+    upgradeCost: upgradeCostTotal,
+    creditsPerHourSaved: hoursSaved > TIE_EPS && upgradeCostTotal > 0 ? upgradeCostTotal / hoursSaved : null,
+    binding: plan.binding, ready: plan.ready,
+    criticalGroup: running.filter(b => b.critical).map(b => b.name),
+  };
+}
+
+// Greedy spend of `budget` credits on levels: the chain time only drops when
+// EVERY building tied at the top gets faster, so each step lifts the whole
+// critical group by one level. Stops when the next group step is
+// unaffordable, when a member of the group sits at its floor (that building
+// can go no faster, so the chain cannot either), or when nothing runs.
+// `startLevels` seeds the walk (the emulator's current scenario) so the
+// budget is spent on top of what is already set. Speeds are left as given.
+function spendOnChain(chain, demands, stocks, opts, budget, startLevels, speeds) {
+  opts = opts || {};
+  const levels = clampScenarioLevels(chain, startLevels);
+  const floorOf = {};
+  for (const b of chain.list) floorOf[b.name] = floorLevel(b.timer);
+  const speedOpt = { byBuilding: speeds || {} };
+  const run = () => planCore(chain, demands, stocks, { ...opts, levelOverrides: levels, speed: speedOpt });
+  let spent = 0, steps = 0;
+  let last = run();
+  const hoursBefore = last.hoursPipelined;
+  const b = Number(budget);
+  if (isFinite(b) && b > 0) {
+    for (;;) {
+      const running = last.buildings.filter(x => x.unitsToRun > 0);
+      const maxHours = running.reduce((m, x) => Math.max(m, x.hours), 0);
+      const group = running.filter(x => x.hours >= maxHours - TIE_EPS).map(x => x.name);
+      if (!group.length) break;
+      if (group.some(n => levels[n] >= floorOf[n])) break;
+      const cost = group.reduce((s, n) => s + levelCost(levels[n] + 1), 0);
+      if (spent + cost > b) break;
+      for (const n of group) levels[n] += 1;
+      spent += cost;
+      steps++;
+      last = run();
+      if (steps > 20000) break;
+    }
+  }
+  return { levels, spent, steps, hoursBefore, hoursAfter: last.hoursPipelined };
+}
+
 const LabMath = {
   SPEED_INPUT_MULT, LEVEL_COST_BASE, TIMER_FLOOR, TIMER_STEP, CLAIM_COOLDOWN_MIN,
   normName, buildChain, expand, stageOf, stocksAfterBundle,
-  timerAt, levelCost, levelsToFloor, costToFloor, planCore, planTarget,
+  timerAt, levelCost, levelsToFloor, costToFloor, floorLevel, upgradeCost, levelsAffordable,
+  planCore, planTarget,
+  stripIntermediates, clampScenarioLevels, emulateProduction, spendOnChain,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = LabMath;
 if (typeof window !== "undefined") window.LabMath = LabMath;
+})();

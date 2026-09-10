@@ -7,6 +7,13 @@
 // getModuleResource, BaseModuleCard upkeep). The ONLY estimate is how much
 // stellarium the miner yields per production (server-side); it lives in
 // ESTIMATES and every number derived from it is flagged.
+//
+// Wrapped in a function: in the browser every one of these files is a classic
+// <script> sharing ONE global scope, so a top-level `function levelCost` here
+// and another in a sibling file silently overwrite each other (lab-math's
+// 1.15M x level was replaced by base-math's module curve at call time).
+// Only window.BaseMath / module.exports leave this scope.
+(function () {
 const PROVENANCE = { client: "1.1.1", bundle: "index-BiPcVSdi.js" };
 
 // defaultTarget: the level a fresh (no stored override) target box shows.
@@ -369,3 +376,4 @@ const BaseMath = {
 };
 if (typeof module !== "undefined" && module.exports) module.exports = BaseMath;
 if (typeof window !== "undefined") window.BaseMath = BaseMath;
+})();

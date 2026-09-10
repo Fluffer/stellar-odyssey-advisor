@@ -478,3 +478,221 @@ describe("F8: output > 1 per batch", () => {
     assert.equal(r.raw["gold"], 9);
   });
 });
+
+// ---- production emulator (Lab tab) ----
+// "How long does N of a product take, and what do levels / speed do to it?"
+describe("LabMath: floorLevel / upgradeCost / levelsAffordable", () => {
+  test("floor level is where 0.1 s per level reaches the 5 s floor", () => {
+    assert.equal(LabMath.floorLevel(45), 400);
+    assert.equal(LabMath.floorLevel(30), 250);
+    assert.equal(LabMath.floorLevel(5), 0);
+    assert.equal(LabMath.floorLevel(0), 0);
+  });
+
+  test("upgradeCost is the sum of 1.15M * k over the levels bought, 0 downward", () => {
+    // 20 -> 22: 1.15M * (21 + 22)
+    assert.equal(LabMath.upgradeCost(20, 22), 1150000 * 43);
+    assert.equal(LabMath.upgradeCost(20, 20), 0);
+    assert.equal(LabMath.upgradeCost(20, 10), 0);
+    assert.equal(LabMath.upgradeCost(0, 1), 1150000);
+  });
+
+  test("levelsAffordable counts whole levels the budget covers", () => {
+    assert.equal(LabMath.levelsAffordable(20, 1150000 * 43), 2);
+    assert.equal(LabMath.levelsAffordable(20, 1150000 * 43 - 1), 1);
+    assert.equal(LabMath.levelsAffordable(20, 0), 0);
+    assert.equal(LabMath.levelsAffordable(20, NaN), 0);
+  });
+});
+
+describe("LabMath.planCore: per-building speed map", () => {
+  test("speed.byBuilding divides each named building's time and multiplies its inputs", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {},
+      { freeSlots: 10, speed: { byBuilding: { Foundry: 2, Refinery: 5, "Fuel Lab": 1 } } });
+    const by = Object.fromEntries(core.buildings.map(b => [b.name, b]));
+    near(by["Foundry"].hours, 2000 * 43 / 2 / 3600);
+    assert.equal(by["Foundry"].speedX, 2);
+    near(by["Foundry"].inputs.find(i => i.name === "gold").needed, 20000000 * 2.6);
+    near(by["Refinery"].hours, 2000 * 43 / 5 / 3600);
+    near(by["Refinery"].inputs.find(i => i.name === "ruby").needed, 20000000 * 10.5);
+    // x1 is "no multiplier"
+    assert.equal(by["Fuel Lab"].speedX, 1);
+    near(by["Fuel Lab"].hours, 100 * 28 / 3600);
+    // untouched building unchanged
+    near(by["Crystal Synthesis Lab"].hours, 2000 * 43 / 3600);
+    assert.equal(by["Crystal Synthesis Lab"].speedX, 1);
+  });
+
+  test("the group shape still works and reports speedX on its members", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const core = LabMath.planCore(chain, [{ product: "warp capsule", units: 10 }], {},
+      { freeSlots: 10, speed: { buildings: ["Foundry"], x: 3 } });
+    assert.equal(core.buildings.find(b => b.name === "Foundry").speedX, 3);
+    near(core.buildings.find(b => b.name === "Foundry").hours, 2000 * 43 / 3 / 3600);
+  });
+});
+
+describe("LabMath.clampScenarioLevels", () => {
+  test("never below the live level, never above the floor level, floored to whole levels", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const lv = LabMath.clampScenarioLevels(chain, { Foundry: 5, Refinery: 999, "Fuel Lab": 33.7, "Space Capsule Complex": "abc" });
+    assert.equal(lv["Foundry"], 20);            // cannot downgrade
+    assert.equal(lv["Refinery"], 400);          // capped at the floor level
+    assert.equal(lv["Fuel Lab"], 33);
+    assert.equal(lv["Space Capsule Complex"], 20); // garbage -> live level
+    assert.equal(lv["Nanotech Complex"], 20);   // unset -> live level
+  });
+
+  test("a live level already past the floor is kept, not cut", () => {
+    const b = liveBuildings();
+    b[0].level = 450;
+    const chain = LabMath.buildChain(b);
+    assert.equal(LabMath.clampScenarioLevels(chain, {})["Foundry"], 450);
+    assert.equal(LabMath.clampScenarioLevels(chain, { Foundry: 460 })["Foundry"], 450);
+  });
+});
+
+describe("LabMath.stripIntermediates", () => {
+  test("zeroes every product the chain makes and keeps raw stock, without mutating", () => {
+    const chain = LabMath.buildChain(liveBuildings());
+    const stocks = { gold: 5, ingots: 7000, "warp capsule": 50, "pet food": 3 };
+    const out = LabMath.stripIntermediates(chain, stocks);
+    assert.deepEqual(out, { gold: 5, ingots: 0, "warp capsule": 0, "pet food": 3,
+      "refined crystals": 0, "high end crystals": 0, propulsors: 0, nanoconductors: 0,
+      microcircuits: 0, "fusion cells": 0, "fuel cell casing": 0, "unstable fuel": 0 });
+    assert.equal(stocks.ingots, 7000);
+  });
+});
+
+describe("LabMath.emulateProduction", () => {
+  const chain = () => LabMath.buildChain(liveBuildings());
+  const demand = [{ product: "warp capsule", units: 10 }];
+  const opts = { freeSlots: 10, netTopLevel: false };
+
+  test("no changes: scenario equals baseline, nothing bought, nothing saved", () => {
+    const e = LabMath.emulateProduction(chain(), demand, {}, {}, opts);
+    near(e.hoursNow, 2000 * 43 / 3600 + 2 * 10 / 60);
+    near(e.hours, e.hoursNow);
+    assert.equal(e.hoursSaved, 0);
+    assert.equal(e.upgradeCost, 0);
+    assert.equal(e.creditsPerHourSaved, null);
+    assert.deepEqual(e.speeds, {});
+    // all five 45 s stage-1 buildings are tied at the top
+    assert.deepEqual(e.criticalGroup.sort(), ["Crystal Synthesis Lab", "Foundry", "Nanotech Complex", "Noble Gas Processing Station", "Refinery"]);
+    const f = e.buildings.find(b => b.name === "Foundry");
+    assert.equal(f.levelNow, 20); assert.equal(f.level, 20); assert.equal(f.floorLevel, 400);
+    assert.equal(f.levelsBought, 0); assert.equal(f.speedX, 1); assert.equal(f.critical, true);
+    assert.deepEqual(f.extraInputs, []);
+  });
+
+  test("upgrading ONE tied building saves nothing but still costs; the group saves", () => {
+    const one = LabMath.emulateProduction(chain(), demand, {}, { levels: { Foundry: 30 } }, opts);
+    assert.equal(one.upgradeCost, LabMath.upgradeCost(20, 30));
+    assert.equal(one.hoursSaved, 0);
+    assert.equal(one.creditsPerHourSaved, null);
+    assert.equal(one.buildings.find(b => b.name === "Foundry").critical, false);
+    const group = { Foundry: 30, Refinery: 30, "Crystal Synthesis Lab": 30, "Noble Gas Processing Station": 30, "Nanotech Complex": 30 };
+    const all = LabMath.emulateProduction(chain(), demand, {}, { levels: group }, opts);
+    near(all.hoursSaved, 2000 * 1 / 3600); // 43 s -> 42 s on 2000 units
+    assert.equal(all.upgradeCost, 5 * LabMath.upgradeCost(20, 30));
+    near(all.creditsPerHourSaved, all.upgradeCost / all.hoursSaved);
+    near(all.buildings.find(b => b.name === "Foundry").timer, 42);
+    assert.equal(all.buildings.find(b => b.name === "Foundry").levelsBought, 10);
+  });
+
+  test("a speed multiplier costs resources, not credits, and is reported as extra inputs", () => {
+    const e = LabMath.emulateProduction(chain(), demand, {}, { speeds: { Foundry: 2, Refinery: "2", "Fuel Lab": 1, Nope: 3 } }, opts);
+    assert.deepEqual(e.speeds, { Foundry: 2, Refinery: 2, Nope: 3 });
+    assert.equal(e.upgradeCost, 0);
+    const f = e.buildings.find(b => b.name === "Foundry");
+    assert.equal(f.speedX, 2);
+    near(f.hours, 2000 * 43 / 2 / 3600);
+    near(f.timer, 43); // the timer itself is unchanged, the queue runs at x2
+    assert.deepEqual(f.extraInputs.map(x => x.name).sort(), ["copper", "gold", "platinum", "silver"]);
+    near(f.extraInputs.find(x => x.name === "gold").extra, 20000000 * 1.6);
+    // the other three tied buildings still bound the chain
+    assert.equal(e.hoursSaved, 0);
+  });
+
+  test("useStock=false times the chain from scratch; default uses intermediates on the shelf", () => {
+    const stocks = { "unstable fuel": 100, "fuel cell casing": 100 };
+    const withStock = LabMath.emulateProduction(chain(), demand, stocks, {}, opts);
+    near(withStock.hoursNow, 10 * 28 / 3600);
+    const scratch = LabMath.emulateProduction(chain(), demand, stocks, { useStock: false }, opts);
+    near(scratch.hoursNow, 2000 * 43 / 3600 + 2 * 10 / 60);
+    // the demanded product's own stock never counts either way
+    const capsules = LabMath.emulateProduction(chain(), demand, { "warp capsule": 500 }, {}, opts);
+    assert.equal(capsules.buildings.find(b => b.name === "Space Capsule Complex").unitsToRun, 10);
+  });
+
+  test("any product the chain makes can be the target", () => {
+    const e = LabMath.emulateProduction(chain(), [{ product: "ingots", units: 100 }], {}, {}, opts);
+    assert.equal(e.buildings.find(b => b.name === "Foundry").unitsToRun, 100);
+    assert.equal(e.buildings.filter(b => b.unitsToRun > 0).length, 1);
+    near(e.hoursNow, 100 * 43 / 3600);
+    assert.deepEqual(e.criticalGroup, ["Foundry"]);
+  });
+
+  test("a level on a building the product never runs is not billed", () => {
+    const e = LabMath.emulateProduction(chain(), [{ product: "ingots", units: 100 }], {}, { levels: { Foundry: 25, Refinery: 300 } }, opts);
+    assert.equal(e.upgradeCost, LabMath.upgradeCost(20, 25));
+    assert.equal(e.buildings.find(b => b.name === "Refinery").upgradeCost, 0);
+    assert.equal(e.buildings.find(b => b.name === "Refinery").level, 300);
+  });
+});
+
+describe("LabMath.spendOnChain", () => {
+  const chain = () => LabMath.buildChain(liveBuildings());
+  const demand = [{ product: "warp capsule", units: 10 }];
+  const opts = { freeSlots: 10, netTopLevel: false };
+  const tied = ["Foundry", "Refinery", "Crystal Synthesis Lab", "Noble Gas Processing Station", "Nanotech Complex"];
+
+  test("lifts the whole tied group one level per step until the budget runs out", () => {
+    // one step = 5 buildings x level 21 = 5 x 24.15M; two steps add 5 x 25.3M
+    const oneStep = 5 * LabMath.levelCost(21);
+    const twoSteps = oneStep + 5 * LabMath.levelCost(22);
+    const r = LabMath.spendOnChain(chain(), demand, {}, opts, twoSteps + 1, {}, {});
+    assert.equal(r.steps, 2);
+    assert.equal(r.spent, twoSteps);
+    for (const n of tied) assert.equal(r.levels[n], 22);
+    assert.equal(r.levels["Fuel Lab"], 20);
+    near(r.hoursBefore - r.hoursAfter, 2000 * 0.2 / 3600);
+    const short = LabMath.spendOnChain(chain(), demand, {}, opts, oneStep - 1, {}, {});
+    assert.equal(short.steps, 0);
+    assert.equal(short.spent, 0);
+    near(short.hoursAfter, short.hoursBefore);
+  });
+
+  test("spends on top of the scenario it is given, and moves on once the group is no longer the slowest", () => {
+    // Put the five 45 s buildings near their floor: 2000 x 5.1 s = 2.83 h, now
+    // below the two 30 s buildings' 2000 x 28 s = 15.6 h, which become the group.
+    const start = {};
+    for (const n of tied) start[n] = 399;
+    const r = LabMath.spendOnChain(chain(), demand, {}, opts, 2 * LabMath.levelCost(21), start, {});
+    assert.equal(r.steps, 1);
+    assert.equal(r.levels["Circuit Integration Facility"], 21);
+    assert.equal(r.levels["Energetic Fusion Center"], 21);
+    for (const n of tied) assert.equal(r.levels[n], 399);
+  });
+
+  test("stops when a member of the tied group is at its floor", () => {
+    const start = {};
+    for (const n of tied) start[n] = 400;
+    // the two 30 s buildings would be next (15.6 h); give them the floor too,
+    // so the slowest stage is all at the floor -> nothing left to buy
+    start["Circuit Integration Facility"] = 250;
+    start["Energetic Fusion Center"] = 250;
+    const r = LabMath.spendOnChain(chain(), demand, {}, opts, 1e15, start, {});
+    assert.equal(r.steps, 0);
+    assert.equal(r.spent, 0);
+  });
+
+  test("a non-finite or zero budget buys nothing; empty chain does not throw", () => {
+    assert.equal(LabMath.spendOnChain(chain(), demand, {}, opts, NaN, {}, {}).steps, 0);
+    assert.equal(LabMath.spendOnChain(chain(), demand, {}, opts, 0, {}, {}).steps, 0);
+    const r = LabMath.spendOnChain(LabMath.buildChain([]), demand, {}, opts, 1e12, {}, {});
+    assert.equal(r.steps, 0);
+    assert.deepEqual(r.levels, {});
+  });
+});

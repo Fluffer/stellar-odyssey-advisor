@@ -71,7 +71,18 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   most time per credit (1.15M × level, 0.1 s per level down to the 5 s floor), the best
   affordable speed multiplier, and base-founding readiness (5,000 each of the five
   intermediates) with the capsule chain time after founding; the target counts capsules
-  on top of what you already hold
+  on top of what you already hold. A **production emulator** answers "how long does N of
+  this take, and what do upgrades do to that?": pick any product the chain makes and an
+  amount (on top of stock, optionally ignoring the intermediates you already hold), and
+  it shows the chain time as it stands next to the time with your changes. Per building
+  you set a scenario level (bounded by the live level and the 5 s floor) and a speed
+  multiplier (x2..x10, which costs resources, not credits); the page shows the timer and
+  time before and after per building, which buildings are tied at the top (they must all
+  get faster for the chain to), the credit cost of the levels against your pile, the
+  credits per hour saved, and the extra resources the multipliers eat. Buttons take every
+  running building +10 / +50 / to the floor, and a **budget spend** lifts the whole tied
+  group one level at a time until the credits run out. The scenario is remembered in the
+  browser
 - **Base** — base-building planner. Before founding: founding readiness, which star to
   found under (stellarium rate per star type), the unlock order with stellarium cost per
   module and an estimated timeline, per-module target levels with the exact material cost
@@ -166,9 +177,12 @@ in `LANGS`/`LANG_NAMES`, and adding an `<option>` in `public/index.html`.
 ### Extras
 
 - `node check-page.js` — sanity check: syntax-checks the GUI scripts in `public/`,
-  verifies `index.html` references them, and checks the i18n catalogues (every key the
-  GUI uses exists, every English string is translated, no stale translations) — useful
-  after editing the GUI code
+  verifies `index.html` references them, checks the i18n catalogues (every key the
+  GUI uses exists, every English string is translated, no stale translations), and fails
+  if two GUI scripts declare the same top-level name (they are classic `<script>` tags
+  sharing one global scope, so the later one silently replaces the earlier; the shared
+  `*-math.js` files are wrapped in a function for that reason) — useful after editing
+  the GUI code
 - `node diagnose-connection.js` — walks every stage of the connection to the game and
   reports which stage fails and how to fix it (see below)
 
@@ -244,7 +258,7 @@ old — see Requirements.
 | `public/app.js` | GUI client-side rendering and the pet simulator |
 | `public/i18n.js` | GUI string catalogue (English + Simplified Chinese) and the `t()` lookup runtime |
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
-| `public/lab-math.js` | Shared laboratory chain math used by both the engine and the GUI |
+| `public/lab-math.js` | Shared laboratory chain math and the production emulator, used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
 | `public/unit-math.js` | Shared droid/clone upgrade-cost math and the cost emulator, used by both the engine and the GUI |
 | `lib/income.js` | Observed income rate from the history log |

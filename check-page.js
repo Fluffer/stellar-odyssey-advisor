@@ -78,6 +78,34 @@ try {
   fail("i18n.js does not load: " + e.message);
 }
 
+// 2b. The page loads every script as a classic <script>, so they all share
+// ONE global scope: a top-level `function levelCost` in two files is not two
+// functions but one overwriting the other, at call time, with no error.
+// (base-math's module-level curve once replaced lab-math's 1.15M x level
+// this way and the Lab tab's ROI costs were silently wrong.) The shared
+// math files are wrapped in a function for that reason; this fails if a
+// top-level name is ever declared in more than one script.
+{
+  const DECL = /^(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm;
+  const SHARED = ["pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"];
+  const wrapped = SHARED.filter(f => !/^\(function \(\) \{$/m.test(fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8")));
+  // A wrapped file's column-0 declarations sit inside its function, so only
+  // the scripts that really run at top level are scanned for collisions.
+  const owner = {};
+  const dupes = [];
+  for (const f of ["i18n.js", "icon-map.js", "app.js"].concat(wrapped)) {
+    const src = fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8");
+    for (const m of src.matchAll(DECL)) {
+      if (owner[m[1]] && owner[m[1]] !== f) dupes.push(m[1] + " (" + owner[m[1]] + " and " + f + ")");
+      owner[m[1]] = owner[m[1]] || f;
+    }
+  }
+  if (dupes.length) fail("top-level names declared by more than one GUI script (they overwrite each other in the browser): " + dupes.join(", "));
+  else console.log("  ok: no top-level name is declared by two GUI scripts");
+  if (wrapped.length) fail("shared math file(s) not wrapped in a function, their internals leak into the page's global scope: " + wrapped.join(", "));
+  else console.log("  ok: the shared math files keep their internals out of the global scope");
+}
+
 // 3. Every t("key") the GUI calls must exist in the English catalogue, and
 // every English key must have a Chinese translation. A typo'd key renders as
 // the raw key text on the page, which is easy to miss by eye.

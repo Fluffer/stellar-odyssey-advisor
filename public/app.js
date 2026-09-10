@@ -1566,6 +1566,9 @@ function renderLab(lab) {
     html += '</div>';
   }
 
+  // --- production emulator ---
+  html += labEmuSection(lab);
+
   // --- base founding ---
   html += '<h2>' + t('lab.h_base_founding') + '</h2><div class="cards">';
   const bundleRows = lab.foundingBundle.map(b => ({ name: b.product, need: b.units, have: lab.stocks[b.product] || 0 }));
@@ -1576,6 +1579,257 @@ function renderLab(lab) {
   html += '</div>';
   if (shortRows.length) {
     html += '<div class="list">' + shortRows.map(b => '<div class="row">' + matIcon(b.name) + '<span><b>' + esc(materialLabel(b.name)) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
+  }
+  return html;
+}
+
+// ---- lab production emulator ----
+// "How long does a given amount of a product take, and what do building
+// levels and speed multipliers do to that time?" The chain math is
+// window.LabMath (public/lab-math.js), the same module the server-side
+// planner uses. A scenario is a level per building and a speed per building
+// laid over the live chain; the baseline is the live chain as it stands.
+// Product, amount, levels and speeds are remembered in this browser.
+const LAB_EMU_KEY = 'advisor-lab-emu';
+const LAB_EMU_DEFAULT_PRODUCT = 'warp capsule';
+const LAB_EMU_DEFAULT_UNITS = 100;
+
+function labEmuStore() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAB_EMU_KEY) || 'null');
+    if (v && typeof v === 'object') return v;
+  } catch (e) {}
+  return {};
+}
+function labEmuSave(store) {
+  try { localStorage.setItem(LAB_EMU_KEY, JSON.stringify(store)); } catch (e) {}
+}
+function labEmuLab() {
+  return window.lastData && window.lastData.lab && window.lastData.lab.available ? window.lastData.lab : null;
+}
+function labEmuCredits() {
+  const u = window.lastData && window.lastData.units;
+  return (u && u.credits) || 0;
+}
+// The stored scenario, validated against the live chain: a product the
+// chain no longer makes falls back to the default, levels are clamped to
+// [live level, floor level] by the math itself.
+function labEmuState(chain) {
+  const s = labEmuStore();
+  const products = chain.list.map(b => b.product);
+  let product = typeof s.product === 'string' ? s.product : LAB_EMU_DEFAULT_PRODUCT;
+  if (!products.includes(product)) product = products.includes(LAB_EMU_DEFAULT_PRODUCT) ? LAB_EMU_DEFAULT_PRODUCT : (products[0] || '');
+  const units = Math.max(1, Math.floor(Number(s.units) || LAB_EMU_DEFAULT_UNITS));
+  return {
+    product, units,
+    useStock: s.useStock !== false,
+    levels: (s.levels && typeof s.levels === 'object') ? s.levels : {},
+    speeds: (s.speeds && typeof s.speeds === 'object') ? s.speeds : {},
+    budget: (typeof s.budget === 'number' && isFinite(s.budget)) ? s.budget : null,
+  };
+}
+function setLabEmu(field, value) {
+  const store = labEmuStore();
+  if (field === 'units') store.units = Math.max(1, Math.floor(Number(value) || 0));
+  else if (field === 'useStock') store.useStock = !!value;
+  else if (field === 'product') store.product = String(value);
+  else if (field === 'budget') store.budget = Math.max(0, Number(value) || 0);
+  labEmuSave(store);
+  drawLabEmu();
+}
+function setLabEmuLevel(name, v) {
+  const store = labEmuStore();
+  store.levels = Object.assign({}, store.levels);
+  store.levels[name] = Math.max(0, Math.floor(Number(v) || 0));
+  labEmuSave(store);
+  drawLabEmu();
+}
+function setLabEmuSpeed(name, x) {
+  const store = labEmuStore();
+  store.speeds = Object.assign({}, store.speeds);
+  const xi = Math.min(10, Math.max(1, Math.floor(Number(x) || 1)));
+  if (xi > 1) store.speeds[name] = xi; else delete store.speeds[name];
+  labEmuSave(store);
+  drawLabEmu();
+}
+// Every building to the level where its timer hits the 5 s floor: the
+// "what is the fastest this chain can ever be" scenario.
+function labEmuAllFloor() {
+  const lab = labEmuLab();
+  if (!lab) return;
+  const LM = window.LabMath;
+  const chain = LM.buildChain(lab.chain);
+  const store = labEmuStore();
+  const running = labEmuRunning(lab, chain);
+  store.levels = Object.assign({}, store.levels);
+  for (const b of chain.list) if (running.includes(b.name)) store.levels[b.name] = LM.floorLevel(b.timer);
+  labEmuSave(store);
+  drawLabEmu();
+}
+// The buildings the current product actually runs: the rows on screen, and
+// the only ones the all-at-once buttons touch.
+function labEmuRunning(lab, chain) {
+  const st = labEmuState(chain);
+  const stocks = st.useStock ? lab.stocks : window.LabMath.stripIntermediates(chain, lab.stocks);
+  const core = window.LabMath.planCore(chain, [{ product: st.product, units: st.units }], stocks, { freeSlots: lab.freeSlots, netTopLevel: false });
+  return core.buildings.filter(b => b.unitsToRun > 0).map(b => b.name);
+}
+// Shift every running building's scenario level by `delta` from where it stands.
+function bumpLabEmu(delta) {
+  const lab = labEmuLab();
+  if (!lab) return;
+  const LM = window.LabMath;
+  const chain = LM.buildChain(lab.chain);
+  const store = labEmuStore();
+  const cur = LM.clampScenarioLevels(chain, store.levels || {});
+  const running = labEmuRunning(lab, chain);
+  store.levels = Object.assign({}, store.levels);
+  for (const b of chain.list) if (running.includes(b.name)) store.levels[b.name] = Math.max(b.level || 0, cur[b.name] + delta);
+  labEmuSave(store);
+  drawLabEmu();
+}
+// Spend the budget on the critical path, on top of the current scenario.
+function spendLabEmu() {
+  const lab = labEmuLab();
+  if (!lab) return;
+  const LM = window.LabMath;
+  const chain = LM.buildChain(lab.chain);
+  const st = labEmuState(chain);
+  const budget = st.budget === null ? labEmuCredits() : st.budget;
+  const stocks = st.useStock ? lab.stocks : LM.stripIntermediates(chain, lab.stocks);
+  const opts = { freeSlots: lab.freeSlots, netTopLevel: false };
+  const res = LM.spendOnChain(chain, [{ product: st.product, units: st.units }], stocks, opts, budget, st.levels, st.speeds);
+  const store = labEmuStore();
+  store.levels = res.levels;
+  labEmuSave(store);
+  drawLabEmu();
+}
+function resetLabEmu() {
+  const store = labEmuStore();
+  delete store.levels;
+  delete store.speeds;
+  labEmuSave(store);
+  drawLabEmu();
+}
+function drawLabEmu() {
+  const el = document.getElementById('lab-emu');
+  const lab = labEmuLab();
+  if (el && lab) el.innerHTML = labEmuHtml(lab);
+}
+function labEmuSection(lab) {
+  return '<h2>' + t('lab.emu_title') + '</h2>' +
+    '<div class="sub">' + t('lab.emu_note') + '</div>' +
+    '<div id="lab-emu">' + labEmuHtml(lab) + '</div>';
+}
+
+function labEmuHtml(lab) {
+  const LM = window.LabMath;
+  const chain = LM.buildChain(lab.chain);
+  if (!LM || !chain.list.length) return '<div class="empty-note">' + t('lab.empty') + '</div>';
+  const st = labEmuState(chain);
+  const credits = labEmuCredits();
+  const budget = st.budget === null ? credits : st.budget;
+  const opts = { freeSlots: lab.freeSlots, netTopLevel: false };
+  const demand = [{ product: st.product, units: st.units }];
+  const emu = LM.emulateProduction(chain, demand, lab.stocks, { levels: st.levels, speeds: st.speeds, useStock: st.useStock }, opts);
+  const changed = emu.upgradeCost > 0 || Object.keys(emu.speeds).length > 0;
+  const inStock = lab.stocks[st.product] || 0;
+
+  // --- what to make ---
+  const productOptions = chain.list.map(b =>
+    '<option value="' + esc(b.product) + '"' + (b.product === st.product ? ' selected' : '') + '>' + esc(materialLabel(b.product)) + '</option>').join('');
+  let html = '<div class="row" style="gap:14px;flex-wrap:wrap">' +
+    '<span>' + t('lab.emu_product') + ' <select class="pet-input" onchange="setLabEmu(\'product\', this.value)">' + productOptions + '</select></span>' +
+    '<span>' + t('lab.emu_amount') + ' <input class="pet-input lab-input" type="number" min="1" value="' + st.units + '" onchange="setLabEmu(\'units\', this.value)">' +
+    ' <span class="dimtext">' + t('lab.emu_in_stock', { n: fmtC(inStock) }) + '</span></span>' +
+    '<span><label><input type="checkbox"' + (st.useStock ? ' checked' : '') + ' onchange="setLabEmu(\'useStock\', this.checked)"> ' + t('lab.emu_use_stock') + '</label></span>' +
+    '</div>';
+
+  // --- headline: time now, time in the scenario, what the scenario costs ---
+  html += '<div class="cards">';
+  html += card(t('lab.emu_card_time_now'), fmtHours(emu.hoursNow) +
+    '<span style="font-size:11px;color:var(--dim)">' + t('lab.emu_sequential', { n: fmtHours(emu.hoursSequentialNow) }) + '</span>');
+  html += card(t('lab.emu_card_time_scenario'),
+    '<span style="color:' + (emu.hoursSaved > 0 ? 'var(--good)' : 'inherit') + '">' + fmtHours(emu.hours) + '</span>' +
+    '<span style="font-size:11px;color:var(--dim)">' + t('lab.emu_sequential', { n: fmtHours(emu.hoursSequential) }) + '</span>');
+  html += card(t('lab.emu_card_saved'), changed
+    ? (emu.hoursSaved > 0
+      ? '<span style="color:var(--good)">' + fmtHours(emu.hoursSaved) + '</span>' +
+        '<span style="font-size:11px;color:var(--dim)">' + t('lab.emu_saved_pct', { n: Math.round(emu.hoursSaved / emu.hoursNow * 100) }) + '</span>'
+      : '<span style="color:var(--warn)">' + t('lab.emu_saves_nothing') + '</span>')
+    : '<span style="color:var(--dim)">' + t('lab.emu_no_changes') + '</span>');
+  html += card(cardIcon(resIcon('credits', 'mat-tile xs'), t('lab.emu_card_cost')),
+    (emu.upgradeCost > 0
+      ? '<span title="' + fmtN(emu.upgradeCost) + '" style="color:' + (emu.upgradeCost <= credits ? 'inherit' : 'var(--bad)') + '">' + fmtC(emu.upgradeCost) + '</span>' +
+        '<span style="font-size:11px;color:var(--dim)">' +
+        (credits > 0 ? t('lab.emu_cost_pct', { n: Math.round(emu.upgradeCost / credits * 100), credits: fmtC(credits) }) : '') +
+        (emu.creditsPerHourSaved !== null ? t('lab.emu_cost_per_hour', { rate: fmtC(emu.creditsPerHourSaved) }) : '') +
+        '</span>'
+      : '<span style="color:var(--dim)">&mdash;</span>'));
+  if (emu.binding) {
+    html += card(t('lab.card_binding'), '<span style="color:var(--bad)">' + esc(materialLabel(emu.binding.name)) + '</span> ' + covBar(emu.binding.coverage) +
+      '<span style="font-size:11px;color:var(--dim)">' + t('lab.pct_covered', { n: (emu.binding.coverage * 100).toFixed(0) }) + '</span>');
+  }
+  html += '</div>';
+
+  // --- scenario controls ---
+  html += '<div class="row" style="gap:14px;flex-wrap:wrap">' +
+    '<span>' + t('lab.emu_budget') + ' <input class="pet-input" style="width:120px" type="number" min="0" step="1000000" value="' + Math.round(budget) + '"' +
+    ' title="' + t('lab.emu_budget_title') + '" onchange="setLabEmu(\'budget\', this.value)">' +
+    ' <button class="ghost" onclick="spendLabEmu()" title="' + t('lab.emu_spend_title') + '">' + t('lab.emu_spend_btn') + '</button></span>' +
+    '<span>' +
+    '<button class="ghost" onclick="bumpLabEmu(10)">+10</button> ' +
+    '<button class="ghost" onclick="bumpLabEmu(50)">+50</button> ' +
+    '<button class="ghost" onclick="bumpLabEmu(-10)">&minus;10</button> ' +
+    '<button class="ghost" onclick="labEmuAllFloor()" title="' + t('lab.emu_floor_title') + '">' + t('lab.emu_floor_btn') + '</button> ' +
+    '<button class="ghost" onclick="resetLabEmu()">' + t('units.reset') + '</button>' +
+    '</span></div>';
+
+  // --- per building: level and speed inputs, time before -> after ---
+  const rows = emu.buildings.filter(b => b.unitsToRun > 0);
+  const speedSel = (r) => {
+    let s = '<select class="pet-input" onchange="setLabEmuSpeed(' + jsStr(r.name) + ', this.value)">';
+    for (let x = 1; x <= 10; x++) {
+      s += '<option value="' + x + '"' + (x === r.speedX ? ' selected' : '') + ' title="' + t('lab.emu_speed_title', { mult: LM.SPEED_INPUT_MULT[x - 1] }) + '">x' + x +
+        (x > 1 ? ' (' + t('lab.emu_speed_inputs', { mult: LM.SPEED_INPUT_MULT[x - 1] }) + ')' : '') + '</option>';
+    }
+    return s + '</select>';
+  };
+  const arrow = (a, b, fmt, better) => a === b ? fmt(a)
+    : '<span class="dimtext">' + fmt(a) + '</span> &rarr; <span style="color:' + (better ? 'var(--good)' : 'inherit') + '">' + fmt(b) + '</span>';
+  html += '<div class="sub" style="margin:14px 0 4px">' + t('lab.emu_per_building_note') + '</div>';
+  html += tableHtml('tbl-lab-emu', rows, [
+    { label: t('lab.col_building'), numeric: false, getValue: r => r.name,
+      render: r => (r.critical ? '<span class="crit">' : '<b>') + esc(moduleLabel(r.name)) + (r.critical ? ' &#9650;</span>' : '</b>') },
+    { label: t('lab.col_stage'), numeric: true, getValue: r => r.stage, render: r => String(r.stage) },
+    { label: t('lab.col_units'), numeric: true, getValue: r => r.unitsToRun, render: r => fmtN(r.unitsToRun) },
+    { label: t('lab.emu_col_level'), numeric: true, getValue: r => r.level,
+      render: r => '<span class="dimtext">' + r.levelNow + ' &rarr;</span> <input class="pet-input base-input" type="number" min="' + r.levelNow + '" max="' + Math.max(r.levelNow, r.floorLevel) +
+        '" value="' + r.level + '" onchange="setLabEmuLevel(' + jsStr(r.name) + ', this.value)">' +
+        ' <span class="dimtext">' + (r.level >= r.floorLevel ? t('lab.roi_at_floor') : t('lab.emu_floor_at', { n: r.floorLevel })) + '</span>' },
+    { label: t('lab.emu_col_upgrade_cost'), numeric: true, getValue: r => r.upgradeCost,
+      render: r => r.upgradeCost > 0
+        ? '<span title="' + fmtN(r.upgradeCost) + '">' + fmtC(r.upgradeCost) + '</span> <span class="dimtext">' + t('lab.emu_levels_bought', { n: r.levelsBought }) + '</span>'
+        : '<span style="color:var(--dim)">&mdash;</span>' },
+    { label: t('lab.emu_col_speed'), numeric: true, getValue: r => r.speedX, render: speedSel },
+    { label: t('lab.col_timer'), numeric: true, getValue: r => r.timer / r.speedX,
+      render: r => arrow(r.timerNow, r.timer, v => v.toFixed(1) + ' s', r.timer < r.timerNow) +
+        (r.speedX > 1 ? ' <span class="dimtext">&divide; ' + r.speedX + '</span>' : '') },
+    { label: t('lab.col_time'), numeric: true, getValue: r => r.hours,
+      render: r => arrow(r.hoursNow, r.hours, fmtHours, r.hours < r.hoursNow) },
+    { label: t('lab.col_inputs'), numeric: false, getValue: r => r.inputs.length,
+      render: r => r.inputs.map(i => '<span style="white-space:nowrap;' + (i.coverage < 1 ? 'color:var(--bad)' : '') + '">' +
+        esc(materialLabel(i.name)) + ' ' + fmtC(i.needed) + '<span class="dimtext"> / ' + fmtC(i.stock) + '</span></span>').join(' &middot; ') },
+  ]);
+
+  // --- what the speed multipliers add to the bill ---
+  const extra = {};
+  for (const b of rows) for (const e of b.extraInputs) extra[e.name] = (extra[e.name] || 0) + e.extra;
+  const extraNames = Object.keys(extra);
+  if (extraNames.length) {
+    html += '<div class="list" style="margin-top:10px"><div class="row"><span>' +
+      t('lab.emu_speed_extra', { extra: extraNames.map(n => esc(materialLabel(n)) + ' ' + fmtC(extra[n])).join(', ') }) +
+      '</span></div></div>';
   }
   return html;
 }

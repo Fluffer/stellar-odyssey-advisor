@@ -9,6 +9,13 @@
 // it passes (cumulativeDroidCost / cumulativeCloneCost in the game source).
 // Upgrades are PER UNIT and PER SKILL; the game's "apply to all" mode simply
 // charges the sum over every unit.
+//
+// Wrapped in a function: in the browser every one of these files is a classic
+// <script> sharing ONE global scope, so a top-level `function levelCost` here
+// and another in a sibling file silently overwrite each other (lab-math's
+// 1.15M x level was replaced by base-math's module curve at call time).
+// Only window.UnitMath / module.exports leave this scope.
+(function () {
 const UNIT_STEP = 0.1;
 const UNIT_COST_BASE = 5000;
 const UNIT_COST_GROW = 0.15;
@@ -148,3 +155,4 @@ const UnitMath = {
 };
 if (typeof module !== "undefined" && module.exports) module.exports = UnitMath;
 if (typeof window !== "undefined") window.UnitMath = UnitMath;
+})();
