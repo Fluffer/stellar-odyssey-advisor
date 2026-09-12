@@ -83,7 +83,10 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   running building +10 / +50 / to the floor, and a **budget spend** lifts the whole tied
   group one level at a time until the credits run out. The scenario is remembered in the
   browser
-- **Base** — base-building planner. Before founding: founding readiness, which star to
+- **Base** — base-building planner. Known systems (current + bookmarks) with their
+  coordinates, distance from here and distance to the nearest starter system (the uncapped
+  part of a discovery's dust value); a Stellarium section with yield per tick and per day,
+  next tick, the unlock and tier cost curves, and every star type's rate. Before founding: founding readiness, which star to
   found under (stellarium rate per star type), the unlock order with stellarium cost per
   module and an estimated timeline, per-module target levels with the exact material cost
   (charged from each of the module's materials), the stockpile list with shortfalls and lab
@@ -328,6 +331,7 @@ the bridge status as its first stage.
 | `lib/` | Engine modules (constants, value math, CDP reader, install/merge planners, battle rating, units/tech/pets/materials/ship-items advisors) |
 | `lib/lab.js` | Lab planner adapter (game state → shared chain math) |
 | `lib/base.js` | Base planner adapter |
+| `lib/systems.js` | Starter systems, plane distances, per-system coordinate facts |
 | `advisor-battle.js` | Battle simulator (ported from the game's battle code) |
 | `public/index.html` | GUI page skeleton |
 | `public/style.css` | GUI styles |

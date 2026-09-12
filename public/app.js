@@ -1902,7 +1902,7 @@ function renderBase(b) {
   const seen = {}; const options = [];
   for (const s of stars) { if (seen[s.star]) continue; seen[s.star] = true; options.push(s); }
   html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_star')), '<select class="pet-input" onchange="setBaseStar(this.value)">' +
-    options.map(s => '<option value="' + esc(s.star) + '"' + (s.star === starName ? ' selected' : '') + '>' + esc(s.star) + t('base.star_option_rate', { n: s.rate }) + (s.name ? ' &middot; ' + esc(s.name) : '') + '</option>').join('') +
+    options.map(s => '<option value="' + esc(s.star) + '"' + (s.star === starName ? ' selected' : '') + '>' + esc(s.star) + t('base.star_option_rate', { n: s.rate }) + (s.name ? ' &middot; ' + esc(s.name) : '') + (s.coords ? ' ' + fmtCoords(s.coords) : '') + '</option>').join('') +
     '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est">' + t('base.best_known', { star: esc(b.location.best.star), rate: b.location.best.rate }) + (b.location.best.name ? t('base.best_known_at', { name: esc(b.location.best.name) }) : '') + '</span>' : ''));
   // Two formulas disagree by the star rate; show the range rather than pick a
   // side the client cannot settle. See ESTIMATES in public/base-math.js.
@@ -1966,6 +1966,8 @@ function renderBase(b) {
   if (b.labPanelHint) html += '<div class="sub">' + t('base.lab_panel_hint') + '</div>';
   if (b.location.bodies.length) html += '<div class="sub">' + t('base.body_xp', { list: b.location.bodies.map(x =>
     bodyIcon(x.type, 'mat-tile xs') + esc(bodyLabel(x.type)) + (x.activity ? ' &rarr; ' + esc(itemSkillLabel(x.activity)) : '')).join(', ') }) + '</div>';
+  html += baseSystemsHtml(b);
+  html += baseStellariumHtml(b);
 
   // --- live block ---
   if (b.live) {
@@ -2033,6 +2035,73 @@ function renderSummary(p, prevP) {
     card(t('summary.unequipped'), p.unequippedCount);
 }
 function card(k, v) { return '<div class="card"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+
+// ---- base tab: known systems with coordinates, and the Stellarium section ----
+function fmtCoords(c) {
+  if (!c) return '';
+  return '[' + fmtN(c.x) + ', ' + fmtN(c.y) + (c.z !== null && c.z !== undefined ? ', ' + fmtN(c.z) : '') + ']';
+}
+function fmtLy(d) { return d === null || d === undefined ? '-' : fmtN(Math.round(d)) + ' LY'; }
+// A game timestamp (seconds or milliseconds) as a local time plus "in Xh Ym".
+function fmtTick(ts) {
+  const n = Number(ts);
+  if (!isFinite(n) || n <= 0) return '-';
+  const ms = n < 1e12 ? n * 1000 : n;
+  const left = Math.max(0, ms - Date.now());
+  const h = Math.floor(left / 3600000), m = Math.round((left % 3600000) / 60000);
+  return new Date(ms).toLocaleTimeString() + ' <span style="color:var(--dim)">(' + t('base.in_time', { time: h + 'h ' + m + 'm' }) + ')</span>';
+}
+
+function baseSystemsHtml(b) {
+  const systems = [b.location.current].concat(b.location.bookmarks).filter(s => s && (s.name || s.star));
+  if (!systems.length) return '';
+  const rows = systems.map((s, i) => Object.assign({ isCurrent: i === 0 }, s));
+  let html = '<h2>' + t('base.h_systems') + '</h2>';
+  html += '<div class="sub">' + t('base.systems_note') + '</div>';
+  html += tableHtml('tbl-base-systems', rows, [
+    { label: t('base.col_system'), numeric: false, getValue: r => r.name || '', render: r => '<b>' + esc(r.name || '?') + '</b>' +
+      (r.isCurrent ? ' <span style="color:var(--good)">' + t('base.here') + '</span>' : '') +
+      (r.isStarter ? ' <span style="color:var(--dim)">' + t('base.starter') + '</span>' : '') },
+    { label: t('base.col_star'), numeric: false, getValue: r => r.star || '', render: r => esc(r.star || '?') + (r.rate ? '<span class="est">' + t('base.star_option_rate', { n: r.rate }) + '</span>' : '') },
+    { label: t('base.col_coords'), numeric: false, getValue: r => r.coords ? r.coords.x : '', render: r => r.coords ? fmtCoords(r.coords) : '<span style="color:var(--dim)">' + t('base.coords_unknown') + '</span>' },
+    { label: t('base.col_from_here'), numeric: true, getValue: r => r.fromCurrent === null ? -1 : r.fromCurrent, render: r => fmtLy(r.fromCurrent) },
+    { label: t('base.col_nearest_starter'), numeric: true, getValue: r => r.starterDistance === null ? -1 : r.starterDistance,
+      render: r => r.nearestStarter ? esc(r.nearestStarter) + ' &middot; ' + fmtLy(r.starterDistance) : '-' },
+  ]);
+  return html;
+}
+
+function baseStellariumHtml(b) {
+  const st = b.stellarium;
+  if (!st) return '';
+  const range = (a, c, digits) => a.toFixed(digits) + (c && c < a ? ' <span style="color:var(--warn)">&ndash; ' + c.toFixed(digits) + '?</span>' : '');
+  let html = '<h2>' + t('base.h_stellarium') + '</h2>';
+  html += '<div class="sub">' + t('base.stellarium_rules', { hours: st.tickHours, ticks: st.ticksPerDay.toFixed(1) }) + '</div>';
+  html += '<div class="cards">';
+  if (b.live) {
+    html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_held')), String(st.held));
+    html += card(t('base.card_next_tick'), fmtTick(st.nextTick));
+  }
+  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_per_tick')), range(st.perTick, st.perTickClient, 2) +
+    '<span class="est">' + t('base.per_tick_note', { rate: st.starRate, boost: st.minerBoost.toFixed(0) }) + '</span>');
+  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_day')), range(st.perDay, st.perDayClient, 1));
+  html += card(t('base.card_unlocked'), st.unlockedCount + ' / ' + (st.unlockedCount + st.lockedModules.length) +
+    '<span class="est">' + t('base.unlock_left_note', { n: st.totalLeft }) + '</span>');
+  html += '</div>';
+
+  html += '<div class="sub">' + t('base.unlock_curve_note') + '</div>';
+  html += '<div class="sub">' + st.unlockCurve.map(u => t('base.unlock_curve_item', { n: u.unlocked, cost: u.cost })).join(' &middot; ') + '</div>';
+  html += '<div class="sub">' + t('base.tier_curve_note') + ' ' + st.tierCurve.map(x => t('base.tier_curve_item', { tier: x.tier, cost: x.cost })).join(' &middot; ') + '</div>';
+
+  html += '<div class="sub" style="margin-top:6px">' + t('base.star_table_note') + '</div>';
+  html += tableHtml('tbl-base-stars', st.stars.map(s => Object.assign({ chosen: s.name === b.input.starName }, s)), [
+    { label: t('base.col_star'), numeric: false, getValue: r => r.name, render: r => (r.chosen ? '<b>' : '') + esc(r.name) + (r.chosen ? '</b> <span style="color:var(--good)">' + t('base.chosen') + '</span>' : '') + (r.rare ? ' <span style="color:var(--dim)">' + t('base.rare_star') + '</span>' : '') },
+    { label: t('base.col_star_rate'), numeric: true, getValue: r => r.rate, render: r => String(r.rate) },
+    { label: t('base.col_star_efficiency'), numeric: true, getValue: r => r.efficiency, render: r => r.efficiency + '%' },
+    { label: t('base.col_star_day'), numeric: true, getValue: r => r.rate * st.ticksPerDay, render: r => (r.rate * (1 + st.minerBoost / 100) * st.ticksPerDay).toFixed(1) },
+  ]);
+  return html;
+}
 
 // ---- Voyager upgrade emulator ----
 // "What does it cost to buy N of each Voyager upgrade, and what does the
