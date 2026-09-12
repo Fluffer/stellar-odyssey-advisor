@@ -27,6 +27,28 @@ line("");
 line("=== Stellar Odyssey advisor - connection diagnostic ===");
 line("");
 
+// ---- Stage B: browser bridge ----------------------------------------
+// Playing the web build in a browser? Then the state comes from
+// bridge-extension/ through the running advisor server, not from a
+// DevTools port, and the stages below are expected to fail. Asked first so
+// that case is explained before the DevTools hunt starts.
+async function bridgeStage() {
+  line("Stage B: browser bridge (bridge-extension/ pushing into the advisor server)");
+  var st = await cdp.fetchJson("http://127.0.0.1:8787/api/bridge/status");
+  if (!st) {
+    info("advisor server not reachable on 8787, so no bridge status to report.");
+    info("(Only matters if you play at https://steam.stellarodyssey.app in a browser.)");
+  } else if (st.attached) {
+    ok("a browser with the bridge extension is attached (last push " +
+      (st.lastPushAgeMs === null ? "never" : Math.round(st.lastPushAgeMs / 1000) + "s ago") +
+      ", " + st.pushes + " pushes) - analyze will use it; the DevTools stages below are optional");
+  } else {
+    info("no browser bridge attached (" + st.pushes + " pushes so far). If you play in a");
+    info("browser, load bridge-extension/ as an unpacked extension and open the game tab.");
+  }
+  line("");
+}
+
 // ---- Stage 0: Node runtime ------------------------------------------
 line("Stage 0: Node runtime");
 info("node " + process.version + "   platform=" + process.platform);
@@ -92,6 +114,7 @@ line("");
 
 // ---- Stage 3: which candidates actually speak CDP -------------------
 (async function () {
+  await bridgeStage();
   line("Stage 3: which candidates answer the DevTools protocol");
   var anyCdp = false;
   var probed = 0;

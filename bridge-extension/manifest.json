@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Stellar Odyssey Advisor bridge",
+  "version": "1.0.0",
+  "description": "Feeds the game state from the browser version of Stellar Odyssey to the advisor running on localhost:8787.",
+  "minimum_chrome_version": "111",
+  "permissions": ["alarms", "scripting", "nativeMessaging"],
+  "host_permissions": [
+    "https://steam.stellarodyssey.app/*",
+    "http://localhost:8787/*",
+    "http://127.0.0.1:8787/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Stellar Odyssey Advisor bridge" },
+  "content_scripts": [
+    {
+      "matches": ["https://steam.stellarodyssey.app/*"],
+      "js": ["page.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://steam.stellarodyssey.app/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

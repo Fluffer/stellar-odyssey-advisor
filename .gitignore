@@ -10,3 +10,6 @@ snapshots/
 # game icons extracted from the local game install (game artwork, not
 # redistributed) -- regenerate with: node extract-icons.js
 public/icons.svg
+
+# machine-specific native messaging host manifest (absolute paths), written by install.js
+bridge-extension/native-host/com.stellar_odyssey.advisor_launcher.json

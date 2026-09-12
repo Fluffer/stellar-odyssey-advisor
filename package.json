@@ -9,7 +9,8 @@
     "start": "node advisor-server.js",
     "test": "node --test",
     "diagnose": "node diagnose-connection.js",
-    "check": "node check-page.js"
+    "check": "node check-page.js",
+    "build-bridge": "node bridge-extension/build.js"
   },
   "engines": {
     "node": ">=22"

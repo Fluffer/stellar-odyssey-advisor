@@ -26,6 +26,7 @@ const fs = require("fs");
 const path = require("path");
 const { Worker } = require("node:worker_threads");
 const { recentIncome } = require("./lib/income.js");
+const { Bridge } = require("./lib/bridge.js");
 
 const PORT = Number(process.argv[2]) || 8787;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -35,6 +36,25 @@ fs.mkdirSync(SNAP_DIR, { recursive: true });
 function json(res, code, data) {
   res.writeHead(code, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
+}
+
+// Browser bridge (lib/bridge.js): state pushed by bridge-extension/ from a
+// browser tab running the web build. A pushed state is a few hundred KB;
+// the limit only guards against something else hitting the endpoint.
+const bridge = new Bridge();
+const BRIDGE_BODY_LIMIT = 32 * 1024 * 1024;
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > limit) { reject(new Error("body too large")); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
 }
 
 // Whitelist of servable static files -> [filename in public/, Content-Type].
@@ -206,7 +226,9 @@ function getAnalyzeWorker() {
   return worker;
 }
 
-function runInWorker() {
+// `state` is optional: when given (browser bridge) the worker analyzes it
+// instead of reading the Steam client over DevTools.
+function runInWorker(state) {
   return new Promise((resolve, reject) => {
     const worker = getAnalyzeWorker();
     const id = nextRequestId++;
@@ -215,8 +237,43 @@ function runInWorker() {
       reject(new Error("analyze timed out"));
     }, ANALYZE_TIMEOUT_MS);
     pendingRequests.set(id, { resolve, reject, timer });
-    worker.postMessage({ id });
+    worker.postMessage({ id, state: state || null });
   });
+}
+
+// Where the state comes from, in order:
+//  1. a browser with the bridge extension attached: ask it for a fresh read
+//     (or take a push from the last minute) -- the player is playing there;
+//  2. the Steam client over DevTools;
+//  3. if that fails, a bridge push from the last five minutes, rather than
+//     nothing at all.
+const BRIDGE_FRESH_TIMEOUT_MS = 8000;
+const BRIDGE_RECENT_MS = 60 * 1000;
+const BRIDGE_STALE_OK_MS = 5 * 60 * 1000;
+async function analyzeFromBestSource() {
+  const fresh = (await bridge.requestFresh(BRIDGE_FRESH_TIMEOUT_MS)) || bridge.freshest(BRIDGE_RECENT_MS);
+  if (fresh) {
+    const data = await runInWorker(fresh.state);
+    data.source = "browser";
+    data.sourceAgeMs = Date.now() - fresh.at;
+    return data;
+  }
+  try {
+    const data = await runInWorker(null);
+    data.source = "steam";
+    return data;
+  } catch (e) {
+    const stale = bridge.freshest(BRIDGE_STALE_OK_MS);
+    if (!stale) {
+      throw new Error(e.message + " (no browser bridge attached either: see bridge-extension/README.md to play in a browser)");
+    }
+    console.log("[advisor] DevTools read failed (" + e.message + "); using a browser push from " +
+      Math.round((Date.now() - stale.at) / 1000) + "s ago");
+    const data = await runInWorker(stale.state);
+    data.source = "browser";
+    data.sourceAgeMs = Date.now() - stale.at;
+    return data;
+  }
 }
 
 // Single-flight: concurrent /api/analyze calls (auto-refresh + manual clicks)
@@ -227,8 +284,8 @@ async function runAnalyze() {
   if (!analyzeInFlight) {
     analyzeInFlight = (async () => {
       const t0 = Date.now();
-      const data = await runInWorker();
-      console.log("[advisor] analyze ok in " + ((Date.now() - t0) / 1000).toFixed(1) + "s");
+      const data = await analyzeFromBestSource();
+      console.log("[advisor] analyze ok in " + ((Date.now() - t0) / 1000).toFixed(1) + "s via " + data.source);
       await saveSnapshot(data);
       return data;
     })().finally(() => { analyzeInFlight = null; });
@@ -276,6 +333,26 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       json(res, 200, { entries: [] });
     }
+    return;
+  }
+  if (req.url.startsWith("/api/bridge/state")) {
+    if (req.method !== "POST") { json(res, 405, { error: "POST only" }); return; }
+    try {
+      const body = JSON.parse(await readBody(req, BRIDGE_BODY_LIMIT));
+      const got = bridge.push(body.state, { url: body.url });
+      json(res, 200, { ok: true, at: got.at });
+    } catch (e) {
+      console.log("[advisor] bridge push rejected: " + e.message);
+      json(res, 400, { error: e.message });
+    }
+    return;
+  }
+  if (req.url.startsWith("/api/bridge/poll")) {
+    json(res, 200, await bridge.waitForPoll());
+    return;
+  }
+  if (req.url.startsWith("/api/bridge/status")) {
+    json(res, 200, bridge.status());
     return;
   }
   res.writeHead(404);

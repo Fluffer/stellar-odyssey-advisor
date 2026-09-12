@@ -109,7 +109,8 @@ interface, so it cannot spend, craft, equip or change anything on your account.
 - **Node.js 22 or newer** — no npm dependencies, standard library only, nothing to install.
   The version matters: the CDP client uses Node's built-in `WebSocket`, which only exists
   from Node 22. On anything older the server refuses to start and says so.
-- **Stellar Odyssey** (Steam version)
+- **Stellar Odyssey**: the Steam client, or the browser version with the bridge extension
+  (see *Playing in a browser*)
 
 ## Setup: none needed
 
@@ -132,6 +133,67 @@ just not 8787, which the advisor's own web GUI uses.
 
 The debug port only exposes the game's internal UI state on `127.0.0.1` — nothing is
 opened to the network.
+
+## Playing in a browser instead of Steam
+
+The game also runs as a web app at https://steam.stellarodyssey.app (same client,
+same internal stores), and the advisor can read that too. A normal browser profile has
+no DevTools port, so the bridge is a small extension in `bridge-extension/`:
+
+1. In Edge or Chrome open `edge://extensions` / `chrome://extensions`, turn on
+   **Developer mode**, click **Load unpacked** and pick the `bridge-extension` folder.
+2. Open the game tab and log in. The extension badge turns `on` once it has pushed a
+   state to the advisor.
+
+A game tab that was already open when the extension was loaded is picked up as well, so
+you do not have to reload the game or log in again. After editing anything in
+`bridge-extension/`, press the reload icon on the extension's card.
+
+From then on the extension pushes the game state every 30 seconds, and **Analyze now**
+asks it for a fresh read first, so the data is live. When a browser is attached the
+advisor prefers it over the Steam client; close the game tab to go back to reading the
+Steam client. The status line under the buttons says which source the analysis used.
+`node diagnose-connection.js` reports the bridge state first. If the DevTools read of
+the Steam client fails, a browser push from the last five minutes is used instead.
+
+### Letting the extension start the server
+
+An extension cannot start a program, but the browser may start a registered *native
+messaging host* for it. `bridge-extension/native-host/` is such a host: asked by the
+extension, it checks whether the advisor answers on port 8787 and starts
+`advisor-server.js` detached when it does not (output goes to `advisor-server.log` and
+`advisor-server.err.log`). Register it once for your user account, no admin rights
+needed:
+
+```
+node bridge-extension/native-host/install.js
+```
+
+This writes a host manifest with this machine's paths next to the launcher and points
+Edge and Chrome to it in the registry (`HKCU`). From then on the extension starts the
+server whenever it finds it down: on browser start, when the game tab loads, and on its
+30-second check. So with the game open in the browser there is nothing to start by
+hand. `install.js --uninstall` removes the registration.
+
+The registration is tied to the extension's ID, which for an unpacked extension the
+browser derives from the folder path. `install.js` computes that ID the same way; if the
+extension's badge shows `id`, compare with the ID on `edge://extensions` and rerun
+`install.js <that-id>`. Moving the folder changes the ID.
+
+**Badge meanings:** `on` state pushed; `tab` no game tab open; `err` the page did not
+answer (not logged in, or the tab needs a reload); `srv` the advisor server is not
+running and could not be started; `host` the native host is not registered; `id` it is
+registered for a different extension ID.
+
+The alternative without an extension is a dedicated browser profile started with a
+DevTools port, which discovery then finds like the Steam client:
+
+```
+msedge --remote-debugging-port=9333 --user-data-dir=%LOCALAPPDATA%\StellarOdysseyAdvisor\edge-profile https://steam.stellarodyssey.app/
+```
+
+(Current browsers refuse a debug port on the default profile, hence the separate one; you
+log in once in that profile.)
 
 ## Running it
 
@@ -209,6 +271,11 @@ The error message names the stage that failed:
 If it fails before any of that with `WebSocket is not defined`, the Node version is too
 old — see Requirements.
 
+When you play in a browser, "game not found" is expected from the DevTools stages: the
+state comes from the bridge extension instead (see *Playing in a browser*). The error
+then ends with *no browser bridge attached either*, and `diagnose-connection.js` shows
+the bridge status as its first stage.
+
 ## Notes and limits
 
 - **Base upkeep is billed hourly on the `statistics.credits` counter**, not on recent or
@@ -262,6 +329,10 @@ old — see Requirements.
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
 | `public/unit-math.js` | Shared droid/clone upgrade-cost math and the cost emulator, used by both the engine and the GUI |
 | `lib/income.js` | Observed income rate from the history log |
+| `lib/bridge.js` | Browser bridge state holder: pushed states, long-poll, fresh-read requests |
+| `lib/analyze-worker.js` | Worker thread running the analysis, from DevTools or a pushed state |
+| `bridge-extension/` | Browser extension (Edge/Chrome, unpacked) feeding the web build's state to the server; `page.js` is generated from `lib/cdp.js` by `build.js` |
+| `bridge-extension/native-host/` | Native messaging host that starts the server on the extension's request, plus `install.js` to register it |
 | `check-page.js` | GUI file sanity checker |
 | `diagnose-connection.js` | Connection diagnostic (why "game not found") |
 | `package.json` | Metadata, `npm` scripts and the Node version floor |
@@ -270,7 +341,8 @@ old — see Requirements.
 
 `test/` contains golden-value tests that lock the current behavior of the ported game
 formulas (catalyst value math, merge/install planners, unit/tech planners, pet XP math,
-and the battle simulator). They exist so a refactor — or a game update that silently
+and the battle simulator), plus `bridge.test.js` for the browser bridge (including a
+check that the generated `bridge-extension/page.js` matches the current reader). They exist so a refactor — or a game update that silently
 changes a formula — gets caught immediately instead of producing subtly wrong advice.
 
 Run them with:
