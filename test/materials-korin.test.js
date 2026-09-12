@@ -82,7 +82,7 @@ describe("planMaterials", () => {
     blueprints: [
       {
         name: "Bone Blade", quantity: 3, charges: 2, scraps_use: 10,
-        currency_use: [{ normalCurrency: "credits", amount: 100 }],
+        currency_use: [{ normalCurrency: "copper", amount: 100 }],
         material_use: [
           { material: "bones", amount: 5 },
           { material: "metal scrap", amount: 2 },
@@ -101,15 +101,42 @@ describe("planMaterials", () => {
       { name: "bones", quantity: 10 },
       { name: "metal scrap", quantity: 100 },
       { name: "widget", quantity: 1 },
+      // In stock but consumed by no blueprint: must still be listed.
+      { name: "ingots", quantity: 7000 },
+      { name: "pet food", quantity: 1896 },
+      // Zero stock and zero need: noise, must not be listed.
+      { name: "aerolite", quantity: 0 },
     ],
+    commonResources: { copper: 50, gold: 1000 },
+    rareCurrencies: { dark_matter: 12.5 },
   };
   const result = planMaterials(state);
 
-  test("aggregates per-craft (unweighted) and all-uses (weighted by qty*charges) needs", () => {
+  test("gathered resources are listed with the blueprints' currency charge as need", () => {
+    const names = result.gathered.map(r => r.material);
+    assert.deepEqual([...names].sort(), ["copper", "dark matter", "gold"]);
+    const copper = result.gathered.find(r => r.material === "copper");
+    // Bone Blade charges 100 copper per craft, 3 copies x 2 charges = 600
+    assert.deepEqual([copper.stock, copper.neededAllUses, copper.deficit], [50, 600, 550]);
+    const dm = result.gathered.find(r => r.material === "dark matter");
+    assert.deepEqual([dm.stock, dm.neededAllUses, dm.deficit], [12.5, 0, 0]);
+    assert.equal(copper.source, "gathered");
+  });
+
+  test("stocked materials no blueprint uses are still listed", () => {
+    const ingots = result.labMaterials.find(m => m.material === "ingots");
+    assert.ok(ingots, "expected ingots in labMaterials");
+    assert.deepEqual([ingots.stock, ingots.neededAllUses, ingots.deficit], [7000, 0, 0]);
+    const food = result.other.find(m => m.material === "pet food");
+    assert.ok(food, "expected pet food in other");
+    assert.equal(food.stock, 1896);
+    assert.ok(!result.other.find(m => m.material === "aerolite"), "zero stock, zero need is left out");
+  });
+
+  test("aggregates need weighted by qty*charges across all blueprints", () => {
     const bones = result.npcDrops.find(m => m.material === "bones");
     assert.ok(bones, "expected a bones entry");
-    // per-craft: 5 (Bone Blade) + 1 (Ghost Trap) = 6, one craft each
-    assert.equal(bones.neededPerCraftAll, 6);
+    assert.equal(bones.neededPerCraftAll, undefined, "per-craft view was dropped; need is one number");
     // all-uses: 5*3*2 (Bone Blade) + 1*1*1 (Ghost Trap) = 30 + 1 = 31
     assert.equal(bones.neededAllUses, 31);
     assert.equal(bones.stock, 10);
@@ -141,10 +168,10 @@ describe("planMaterials", () => {
     // scraps: 10 * 3 * 2 (Bone Blade) + 0 (Ghost Trap) = 60
     assert.equal(result.totals.scrapsNeededAllUses, 60);
     // currency: 100 * 3 * 2 = 600
-    assert.equal(result.totals.currencyNeeded.credits, 600);
-    // deficits: bones (21) and widget (3); metal scrap and every
-    // zero-need NPC material are not in deficit.
-    assert.equal(result.totals.deficitCount, 2);
+    assert.equal(result.totals.currencyNeeded.copper, 600);
+    // deficits: bones (21), widget (3) and copper (550); metal scrap and
+    // every zero-need NPC material are not in deficit.
+    assert.equal(result.totals.deficitCount, 3);
   });
 
   test("every NPC drop material appears even with zero blueprint usage", () => {

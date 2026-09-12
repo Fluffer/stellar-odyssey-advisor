@@ -1379,8 +1379,7 @@ function materialCols(showFarm) {
     { label: t('mat.col_material'), numeric: false, getValue: r => r.material,
       render: r => '<span class="inv-stat">' + matIcon(r.material) + '<b>' + esc(materialLabel(r.material)) + '</b></span>' },
     { label: t('mat.col_stock'), numeric: true, getValue: r => r.stock, render: r => r.stock.toLocaleString() },
-    { label: t('mat.col_need_per_craft'), numeric: true, getValue: r => r.neededPerCraftAll, render: r => r.neededPerCraftAll.toLocaleString() },
-    { label: t('mat.col_need_all_uses'), numeric: true, getValue: r => r.neededAllUses, render: r => r.neededAllUses.toLocaleString() },
+    { label: t('mat.col_need'), numeric: true, getValue: r => r.neededAllUses, render: r => r.neededAllUses.toLocaleString() },
     { label: t('mat.col_deficit'), numeric: true, getValue: r => r.deficit,
       render: r => r.deficit > 0 ? '<b style="color:var(--bad)">' + r.deficit.toLocaleString() + '</b>' : '0' },
   ];
@@ -1409,6 +1408,10 @@ function renderMaterials(m) {
   html += '<h2>' + t('mat.lab_title') + '</h2>';
   html += '<div class="sub">' + t('mat.lab_note') + '</div>';
   html += tableHtml('tbl-mat-lab', m.labMaterials, materialCols(false));
+
+  html += '<h2>' + t('mat.gathered_title') + '</h2>';
+  html += '<div class="sub">' + t('mat.gathered_note') + '</div>';
+  html += tableHtml('tbl-mat-gathered', m.gathered || [], materialCols(false));
 
   html += '<h2>' + t('mat.other_title') + '</h2>';
   html += tableHtml('tbl-mat-other', m.other, materialCols(false));
@@ -2156,7 +2159,7 @@ async function refresh() {
     if (d.error) { status.textContent = t('status.error', { msg: d.error }); status.style.color = 'var(--bad)'; }
     else {
       window.lastData = d;
-      try { render(d); status.textContent = t('status.updated', { time: new Date().toLocaleTimeString(), secs: ((Date.now() - t0) / 1000).toFixed(1) }); status.style.color = ''; }
+      try { render(d); status.textContent = t('status.updated', { time: new Date().toLocaleTimeString(), secs: ((Date.now() - t0) / 1000).toFixed(1) }) + (d.source === 'browser' ? t('status.via_browser') : ''); status.style.color = ''; }
       catch (e) { status.textContent = t('status.render_error', { msg: e.message }); status.style.color = 'var(--bad)'; console.error(e); }
     }
   } catch (e) {

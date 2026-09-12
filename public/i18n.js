@@ -69,6 +69,7 @@ const EN = {
   "status.timed_out": "timed out after 90s",
   "status.snapshot": " showing snapshot from {when} — click \"Analyze now\" for fresh data",
   "status.unknown_time": "unknown time",
+  "status.via_browser": " · from the browser game via the bridge extension",
 
   // ---- gear, installs, merges, ship items ----
   "act.default": "Default",
@@ -412,11 +413,12 @@ const EN = {
   "mat.npc_drops_note": "farm the listed NPC at the listed location; per-kill drop amounts are not modeled &mdash; only stock vs need is shown",
   "mat.lab_title": "Laboratory materials",
   "mat.lab_note": "produced in the laboratory/base, not farmed from NPCs",
+  "mat.gathered_title": "Gathered resources",
+  "mat.gathered_note": "the common and rare currencies from gathering; need is what the blueprints charge in currency",
   "mat.other_title": "Other",
   "mat.col_material": "Material",
   "mat.col_stock": "Stock",
-  "mat.col_need_per_craft": "Need/craft",
-  "mat.col_need_all_uses": "Need all uses",
+  "mat.col_need": "Need",
   "mat.col_deficit": "Deficit",
   "mat.col_farm": "Farm",
 
@@ -954,6 +956,7 @@ const ZH = {
   "status.timed_out": "90 秒后超时",
   "status.snapshot": " 显示 {when} 的快照 — 点击“立即分析”获取最新数据",
   "status.unknown_time": "未知时间",
+  "status.via_browser": " · 通过桥接扩展来自浏览器版游戏",
 
   // ---- gear, installs, merges, ship items ----
   "act.default": "默认",
@@ -1297,11 +1300,12 @@ const ZH = {
   "mat.npc_drops_note": "在所列地点刷所列 NPC；未建模每次击杀的掉落数量 &mdash; 仅显示库存与需求对比",
   "mat.lab_title": "实验室材料",
   "mat.lab_note": "在实验室/基地生产，不从 NPC 处获取",
+  "mat.gathered_title": "采集资源",
+  "mat.gathered_note": "采集获得的普通与稀有货币；需求为蓝图消耗的货币数量",
   "mat.other_title": "其他",
   "mat.col_material": "材料",
   "mat.col_stock": "库存",
-  "mat.col_need_per_craft": "每次制造需求",
-  "mat.col_need_all_uses": "全部用途需求",
+  "mat.col_need": "需求",
   "mat.col_deficit": "缺口",
   "mat.col_farm": "刷取",
 
