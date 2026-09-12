@@ -17,6 +17,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse(ev.data.state);
   }
   window.addEventListener("message", onMessage);
-  window.postMessage({ __soAdvisor: "read", nonce }, "*");
+  // 'read2': see page.js on why the request type carries a version.
+  window.postMessage({ __soAdvisor: "read2", nonce }, "*");
   return true; // sendResponse is called later
 });

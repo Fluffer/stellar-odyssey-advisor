@@ -12,7 +12,8 @@ is available. Load it once as an unpacked extension:
    a state to the advisor on port 8787.
 
 After editing any file here, press the reload icon on the extension's card
-in `edge://extensions`; it re-attaches to the open game tab by itself.
+in `edge://extensions`; it re-attaches to the open game tab by itself and
+the freshly injected reader replaces the previous one inside the page.
 
 ## Starting the advisor server from the browser
 

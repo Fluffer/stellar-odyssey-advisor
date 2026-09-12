@@ -2,6 +2,13 @@
 // Runs in the game page's own JS world (manifest world: MAIN) so it can reach
 // the Vue app and its Pinia stores. content.js asks for a read through
 // window.postMessage and gets the READ_ALL result back the same way.
+//
+// Re-injection safe: a reload of the extension injects this file again into
+// a game tab that is still open, and a listener from the previous injection
+// keeps living in the page. So the reader is stored on window and replaced
+// by every injection, while the message listener is registered once and
+// always calls the newest reader. The request type is 'read2': listeners
+// from before this scheme answered 'read' and are never triggered again.
 (() => {
   const readAll = () => (
     (() => {
@@ -205,10 +212,13 @@
       });
     })()
   );
+  window.__soAdvisorReadAll = readAll;
+  if (window.__soAdvisorListenerV2) return;
+  window.__soAdvisorListenerV2 = true;
   window.addEventListener('message', (ev) => {
-    if (ev.source !== window || !ev.data || ev.data.__soAdvisor !== 'read') return;
+    if (ev.source !== window || !ev.data || ev.data.__soAdvisor !== 'read2') return;
     let state;
-    try { state = readAll(); } catch (e) { state = { error: e && e.message ? e.message : String(e) }; }
+    try { state = window.__soAdvisorReadAll(); } catch (e) { state = { error: e && e.message ? e.message : String(e) }; }
     window.postMessage({ __soAdvisor: 'state', nonce: ev.data.nonce, state }, '*');
   });
 })();
