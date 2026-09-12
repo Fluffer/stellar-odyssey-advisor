@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"]) {
+for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -87,7 +87,7 @@ try {
 // top-level name is ever declared in more than one script.
 {
   const DECL = /^(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm;
-  const SHARED = ["pet-math.js", "lab-math.js", "base-math.js", "unit-math.js"];
+  const SHARED = ["pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js"];
   const wrapped = SHARED.filter(f => !/^\(function \(\) \{$/m.test(fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8")));
   // A wrapped file's column-0 declarations sit inside its function, so only
   // the scripts that really run at top level are scanned for collisions.

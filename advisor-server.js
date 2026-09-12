@@ -74,6 +74,7 @@ const STATIC = {
   "/lab-math.js": ["lab-math.js", "application/javascript"],
   "/base-math.js": ["base-math.js", "application/javascript"],
   "/unit-math.js": ["unit-math.js", "application/javascript"],
+  "/voyager-math.js": ["voyager-math.js", "application/javascript"],
 };
 
 function serveStatic(res, url) {

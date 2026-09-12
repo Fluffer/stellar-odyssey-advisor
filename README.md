@@ -100,6 +100,10 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   maneuverability ÷ 2 + "Droids dodge chance" mods, capped at 100%, so each dodge mod
   carries the maneuverability level at which it can go, and is flagged to recraft once
   the droids no longer need it
+- **Voyager** — upgrade emulator: the four Voyager upgrades (travel time, max jumps, max
+  fuel, reward bonus) with the game's own cost formulas, what the stock covers, and what a
+  planned set of upgrades does to jumps per expedition, expedition duration, fuel need
+  versus tank, systems and expected catalysts per day
 - **History** — every analysis is snapshotted; trend charts for battle benchmark,
   crafting level, currencies, catalyst counts and pet levels
 
@@ -333,6 +337,8 @@ the bridge status as its first stage.
 | `public/lab-math.js` | Shared laboratory chain math and the production emulator, used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
 | `public/unit-math.js` | Shared droid/clone upgrade-cost math and the cost emulator, used by both the engine and the GUI |
+| `public/voyager-math.js` | Shared Voyager upgrade costs (ported from the game) and the upgrade emulator, used by both the engine and the GUI |
+| `lib/voyager.js` | Voyager planner adapter (game state + voyager catalyst profile → emulator inputs) |
 | `lib/income.js` | Observed income rate from the history log |
 | `lib/bridge.js` | Browser bridge state holder: pushed states, long-poll, fresh-read requests |
 | `lib/analyze-worker.js` | Worker thread running the analysis, from DevTools or a pushed state |

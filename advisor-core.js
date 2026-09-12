@@ -30,6 +30,7 @@ const { planMaterials, NPC_MATERIAL_SOURCES } = require("./lib/materials.js");
 const { planShipItems } = require("./lib/ship-items.js");
 const { planLab } = require("./lib/lab.js");
 const { planBaseFromState } = require("./lib/base.js");
+const { planVoyager } = require("./lib/voyager.js");
 const PetMath = require("./public/pet-math.js");
 const {
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
@@ -335,6 +336,9 @@ function analyze(s) {
   // crafting) are still active via inherited groups - mark them irrelevant
   // so the GUI can dim them instead of hiding real game state.
   const contextTotals = buildContextTotals(totals);
+  // The Voyager emulator reads the voyager catalyst profile (jumps bonus,
+  // fuel efficiency, drop chance), so it comes after the context totals.
+  const voyager = planVoyager({ ...s, tech }, contextTotals.voyager);
 
   return {
     player, gear, warnings, overrideLosses, contextTotals,
@@ -344,7 +348,7 @@ function analyze(s) {
     // multiplier; treat them as unknown, not as a regression.
     battleTrusted: s.ssBattlingBoostKnown !== false,
     projection, inventory,
-    units, tech, pets, materials, shipItems, lab, base,
+    units, tech, pets, materials, shipItems, lab, base, voyager,
   };
 }
 
@@ -399,6 +403,6 @@ module.exports = {
   BATTLING_NPCS, unitStepCost, cumulativeUnitCost, unitPrice, planUnits, planTech, techBattleRanking,
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
   petHoursToNextLevel, planPets, planInventory, planMaterials, NPC_MATERIAL_SOURCES,
-  planShipItems, planLab, planBase: planBaseFromState,
+  planShipItems, planLab, planBase: planBaseFromState, planVoyager,
   CDP, evalInPage, READ_ALL, discoverGame, discoverGameWsUrl, fetchJson, readGameState, analyze,
 };
