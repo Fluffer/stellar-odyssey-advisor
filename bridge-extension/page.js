@@ -103,10 +103,15 @@
         // timer = seconds of travel time bought off the 1800 s base (0..1200),
         // reward_bonus = +% dust/credits per discovery; both feed the upgrade
         // emulator (lib/voyager.js).
-        voyager: voy ? {
-          max_fuel: voy.max_fuel, max_jumps: voy.max_jumps, current_fuel: voy.current_fuel,
-          timer: voy.timer || 0, reward_bonus: voy.reward_bonus || 0,
-        } : null,
+        // Every scalar field of the store is copied (the queue and planning
+        // lists are left out), so a field the advisor learns to use later is
+        // already in old snapshots and needs no reader change.
+        voyager: voy ? Object.assign(
+          Object.fromEntries(Object.entries(voy).filter(function (kv) { return kv[1] === null || typeof kv[1] !== 'object'; })),
+          {
+            max_fuel: voy.max_fuel, max_jumps: voy.max_jumps, current_fuel: voy.current_fuel,
+            timer: voy.timer || 0, reward_bonus: voy.reward_bonus || 0,
+          }) : null,
         // Laboratory: live building chain (inputs, per-unit input amount,
         // output, base timer, level), the running queues, and the queue-slot
         // pool (4 standard, 6 premium, plus purchased extra slots).

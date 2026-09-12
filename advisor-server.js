@@ -356,6 +356,14 @@ const server = http.createServer(async (req, res) => {
     json(res, 200, bridge.status());
     return;
   }
+  // Debug: a slice of the latest pushed state, e.g. /api/bridge/peek?path=voyager
+  if (req.url.startsWith("/api/bridge/peek")) {
+    const q = new URL(req.url, "http://localhost").searchParams.get("path") || "";
+    let v = bridge.latest ? bridge.latest.state : null;
+    for (const seg of q.split(".").filter(Boolean)) v = (v && typeof v === "object") ? v[seg] : undefined;
+    json(res, 200, { path: q, at: bridge.latest ? bridge.latest.at : null, value: v === undefined ? null : v });
+    return;
+  }
   res.writeHead(404);
   res.end("not found");
 });
