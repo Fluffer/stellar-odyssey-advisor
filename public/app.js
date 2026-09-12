@@ -2044,7 +2044,7 @@ const VOY_EMU_KEY = 'advisor-voyager-plan';
 const VOY_UPGRADES = [
   { key: 'timer', currency: 'dust', labelKey: 'voy.up_timer' },
   { key: 'jumps', currency: 'qc', labelKey: 'voy.up_jumps' },
-  { key: 'fuel', currency: 'qc', labelKey: 'voy.up_fuel' },
+  { key: 'fuel', currency: 'qc', labelKey: 'voy.up_fuel', icon: 'fuel' },
   { key: 'reward', currency: 'credits', labelKey: 'voy.up_reward' },
 ];
 const VOY_CURRENCY_ICON = { dust: 'dust', qc: 'quantum_cores', credits: 'credits' };
@@ -2097,6 +2097,9 @@ function voyCurrencyLabel(c) {
   return c === 'dust' ? t('voy.card_dust') : c === 'qc' ? t('voy.card_qc') : t('voy.card_credits');
 }
 
+// A detail line under a card's value, on its own line (nothing when empty).
+function voySub(text) { return text ? '<div style="font-size:11px;color:var(--dim);font-weight:400;margin-top:2px">' + text + '</div>' : ''; }
+
 function renderVoyager(v) {
   let html = '';
   if (!v || !v.available) {
@@ -2105,13 +2108,13 @@ function renderVoyager(v) {
   const c = v.current, st = v.stats, b = v.bonuses;
   html += '<div class="cards">';
   html += card(t('voy.card_travel'), fmtDur(st.travelSec) +
-    '<span style="font-size:11px;color:var(--dim)">' + t('voy.travel_detail', { bought: c.timer, max: v.caps.maxTimerUpgrade }) + '</span>');
+    voySub(t('voy.travel_detail', { bought: c.timer, max: v.caps.maxTimerUpgrade })));
   html += card(t('voy.card_jumps'), st.jumps +
-    '<span style="font-size:11px;color:var(--dim)">' + t('voy.jumps_detail', { base: c.max_jumps, cap: v.caps.maxJumps, bonus: st.jumpsBonus }) + '</span>');
+    voySub(t('voy.jumps_detail', { base: c.max_jumps, cap: v.caps.maxJumps, bonus: st.jumpsBonus })));
   html += card(cardIcon(resIcon('fuel', 'mat-tile xs'), t('voy.card_tank')), fmtC(c.max_fuel) +
-    '<span style="font-size:11px;color:var(--dim)">' + t('voy.tank_detail', { cur: fmtC(c.current_fuel) }) + '</span>');
+    voySub(t('voy.tank_detail', { cur: fmtC(c.current_fuel) })));
   html += card(t('voy.card_reward'), '+' + c.reward_bonus + '%' +
-    '<span style="font-size:11px;color:var(--dim)">' + (v.techRewardLevel !== null ? t('voy.reward_detail', { n: v.techRewardLevel }) : '') + '</span>');
+    voySub((v.techRewardLevel !== null ? t('voy.reward_detail', { n: v.techRewardLevel }) : '')));
   html += card(cardIcon(resIcon('dust', 'mat-tile xs'), t('voy.card_dust')), fmtC(v.stocks.dust));
   html += card(cardIcon(resIcon('quantum_cores', 'mat-tile xs'), t('voy.card_qc')), fmtC(v.stocks.qc));
   html += card(cardIcon(resIcon('credits', 'mat-tile xs'), t('voy.card_credits')), fmtC(v.stocks.credits));
@@ -2139,12 +2142,13 @@ function voyEmuHtml() {
   };
   const costOf = { timer: e.costs.dust, jumps: e.costs.qcJumps, fuel: e.costs.qcFuel, reward: e.costs.credits };
   const rows = VOY_UPGRADES.map(u => ({
-    key: u.key, currency: u.currency, label: t(u.labelKey),
+    key: u.key, currency: u.currency, label: t(u.labelKey), icon: u.icon || null,
     current: currentText[u.key], next: e.nextCost[u.key], max: e.maxAffordable[u.key],
     plan: e.plan[u.key], cost: costOf[u.key],
   }));
   const cols = [
-    { label: t('voy.col_upgrade'), numeric: false, getValue: r => r.label, render: r => '<b>' + esc(r.label) + '</b>' },
+    { label: t('voy.col_upgrade'), numeric: false, getValue: r => r.label,
+      render: r => '<span class="inv-stat">' + (r.icon ? resIcon(r.icon, 'mat-tile xs') : '') + '<b>' + esc(r.label) + '</b></span>' },
     { label: t('voy.col_current'), numeric: false, getValue: r => r.current, render: r => esc(r.current) },
     { label: t('voy.col_next'), numeric: true, getValue: r => r.next === null ? -1 : r.next,
       render: r => r.next === null ? '<span style="color:var(--dim)">' + t('voy.maxed') + '</span>'
@@ -2179,14 +2183,15 @@ function voyEmuHtml() {
     { label: t('voy.m_travel'), before: fmtDur(B.travelSec), after: fmtDur(A.travelSec), changed: B.travelSec !== A.travelSec },
     { label: t('voy.m_jumps'), before: String(B.jumps), after: String(A.jumps), changed: B.jumps !== A.jumps },
     { label: t('voy.m_expedition'), before: fmtDur(B.expeditionSec), after: fmtDur(A.expeditionSec), changed: B.expeditionSec !== A.expeditionSec },
-    { label: t('voy.m_fuel'), before: fmtC(B.fuelPerExpedition), after: fmtC(A.fuelPerExpedition), changed: B.fuelPerExpedition !== A.fuelPerExpedition },
+    { label: t('voy.m_fuel'), icon: 'fuel', before: fmtC(B.fuelPerExpedition), after: fmtC(A.fuelPerExpedition), changed: B.fuelPerExpedition !== A.fuelPerExpedition },
     { label: t('voy.m_tank'), before: tank(B), after: tank(A), changed: B.tankCovers !== A.tankCovers || B.jumpsTankCovers !== A.jumpsTankCovers, html: true },
     { label: t('voy.m_systems'), before: B.systemsPerDay.toFixed(1), after: A.systemsPerDay.toFixed(1), changed: B.systemsPerDay !== A.systemsPerDay },
     { label: t('voy.m_catalysts'), before: B.catalystsPerDay.toFixed(2), after: A.catalystsPerDay.toFixed(2), changed: B.catalystsPerDay !== A.catalystsPerDay },
     { label: t('voy.m_dust'), before: '&times;' + B.dustFactor.toFixed(2), after: '&times;' + A.dustFactor.toFixed(2), changed: B.dustFactor !== A.dustFactor, html: true },
   ];
   const mcols = [
-    { label: t('voy.col_metric'), numeric: false, getValue: r => r.label, render: r => '<b>' + esc(r.label) + '</b>' },
+    { label: t('voy.col_metric'), numeric: false, getValue: r => r.label,
+      render: r => '<span class="inv-stat">' + (r.icon ? resIcon(r.icon, 'mat-tile xs') : '') + '<b>' + esc(r.label) + '</b></span>' },
     { label: t('voy.col_before'), numeric: false, getValue: r => r.before, render: r => r.html ? r.before : esc(r.before) },
     { label: t('voy.col_after'), numeric: false, getValue: r => r.after,
       render: r => (r.changed ? '<b style="color:var(--good)">' : '<span style="color:var(--dim)">') + (r.html ? r.after : esc(r.after)) + (r.changed ? '</b>' : '</span>') },
