@@ -125,19 +125,40 @@ async function pollLoop() {
   }
 }
 
-async function kick(reason) {
+// The advisor GUI tab. Opened once the server answers, on extension load
+// and browser start (never on the 30-second check, so a tab you closed
+// stays closed); clicking the extension icon opens or focuses it.
+const GUI_URL = "http://localhost:8787/";
+async function advisorTab() {
+  const tabs = await chrome.tabs.query({ url: ["http://localhost:8787/*", "http://127.0.0.1:8787/*"] });
+  return tabs[0] || null;
+}
+async function openAdvisor(focus) {
+  const tab = await advisorTab();
+  if (tab) {
+    if (focus) {
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    return;
+  }
+  await chrome.tabs.create({ url: GUI_URL, active: !!focus });
+}
+
+async function kick(reason, open) {
   if (!(await ensureServer())) return;
+  if (open) await openAdvisor(open === "focus");
   push(reason);
   pollLoop();
 }
 
 chrome.alarms.create("so-advisor-push", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === "so-advisor-push") kick("alarm"); });
-chrome.runtime.onInstalled.addListener(async () => { await injectIntoOpenTabs(); kick("install"); });
-chrome.runtime.onStartup.addListener(() => kick("startup"));
+chrome.runtime.onInstalled.addListener(async () => { await injectIntoOpenTabs(); kick("install", "open"); });
+chrome.runtime.onStartup.addListener(() => kick("startup", "open"));
 chrome.tabs.onUpdated.addListener((_id, info, tab) => {
   if (info.status === "complete" && tab.url && tab.url.startsWith("https://steam.stellarodyssey.app/")) {
     setTimeout(() => kick("tab"), 3000);
   }
 });
-chrome.action.onClicked.addListener(() => kick("click"));
+chrome.action.onClicked.addListener(() => kick("click", "focus"));

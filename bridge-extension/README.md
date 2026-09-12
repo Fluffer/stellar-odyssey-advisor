@@ -37,6 +37,12 @@ extension is derived from its folder path. `install.js` computes that ID;
 if the badge shows `id`, compare with the ID on `edge://extensions` and
 rerun `install.js <that-id>`. Moving the folder changes the ID.
 
+Once the server answers, the extension opens the advisor page
+(http://localhost:8787) in a tab when the extension is loaded and when the
+browser starts, unless that tab is already open. It never opens it from
+the 30-second check, so a tab you closed stays closed. Clicking the
+extension icon opens or focuses the advisor tab.
+
 Badge meanings: `on` pushed OK, `tab` no game tab open, `err` the page did
 not answer (not logged in, or the tab needs a reload), `srv` the advisor
 server is not running and could not be started, `host` the native host is

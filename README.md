@@ -175,6 +175,11 @@ server whenever it finds it down: on browser start, when the game tab loads, and
 30-second check. So with the game open in the browser there is nothing to start by
 hand. `install.js --uninstall` removes the registration.
 
+Once the server answers, the extension also opens the advisor page in a tab, on
+extension load and on browser start, unless it is already open; the 30-second check never
+opens one, so a tab you closed stays closed. Clicking the extension icon opens or focuses
+the advisor tab.
+
 The registration is tied to the extension's ID, which for an unpacked extension the
 browser derives from the folder path. `install.js` computes that ID the same way; if the
 extension's badge shows `id`, compare with the ID on `edge://extensions` and rerun
