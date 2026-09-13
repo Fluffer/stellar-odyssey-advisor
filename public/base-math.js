@@ -26,7 +26,8 @@ const MODULES = [
   { name: "Material generator", type: "passive", setup: true, needs: ["Stellarium miner"], materials: ["aerolite"], halfLevel: false, baseAmount: 200, defaultTarget: 50 },
   { name: "Metal scrap generator", type: "passive", setup: false, needs: ["Stellarium miner"], materials: ["cryovita"], halfLevel: false, baseAmount: 1500, defaultTarget: 50 },
   { name: "Resource miner", type: "passive", setup: true, needs: ["Stellarium miner"], materials: ["ferricrystal"], halfLevel: false, baseAmount: 20000, defaultTarget: 50 },
-  { name: "Quantum server", type: "passive", setup: false, needs: ["Material generator"], materials: ["microcircuits"], halfLevel: true, baseAmount: 1, defaultTarget: 50 },
+  // flatBonus: the game adds 3 quantum cores to every Quantum server tick on top of the boosted base amount.
+  { name: "Quantum server", type: "passive", setup: false, needs: ["Material generator"], materials: ["microcircuits"], halfLevel: true, baseAmount: 1, flatBonus: 3, defaultTarget: 50 },
   { name: "Craftron 3000", type: "active", setup: true, needs: ["Metal scrap generator"], materials: ["luminaris"], halfLevel: false, baseAmount: 1, defaultTarget: 50 },
   { name: "Fuel facility", type: "passive", setup: false, needs: ["Resource miner"], materials: ["fusion cells"], halfLevel: false, baseAmount: 5, defaultTarget: 50 },
   { name: "Research lab", type: "passive", setup: false, needs: ["Quantum server", "Craftron 3000", "Fuel facility"], materials: ["warp capsule"], halfLevel: false, baseAmount: 1, defaultTarget: 10 },
@@ -146,8 +147,21 @@ function moduleBoost(mod, efficiencyBoost) {
   const lvl = (mod.halfLevel ? (mod.level || 0) / 2 : (mod.level || 0));
   return lvl * (1 + (mod.tier || 0) / 100) * (1 + (efficiencyBoost || 0) / 100);
 }
+// A tick pays baseAmount x (1 + floor(boost/100)) for sure (plus the module's
+// flat bonus), and one more baseAmount with (boost mod 100)% chance.
+function guaranteedOutputPerTick(mod, efficiencyBoost) {
+  return (mod.baseAmount || 1) * (1 + Math.floor(moduleBoost(mod, efficiencyBoost) / 100)) + (mod.flatBonus || 0);
+}
+function extraDropChance(mod, efficiencyBoost) {
+  return moduleBoost(mod, efficiencyBoost) % 100;
+}
 function expectedOutputPerTick(mod, efficiencyBoost) {
-  return (mod.baseAmount || 1) * (1 + moduleBoost(mod, efficiencyBoost) / 100);
+  return guaranteedOutputPerTick(mod, efficiencyBoost) + (mod.baseAmount || 1) * extraDropChance(mod, efficiencyBoost) / 100;
+}
+// Every module produces once an hour except the Stellarium miner, whose
+// interval is the founded base's stellariumHourly.
+function tickHours(mod, stellariumHourly) {
+  return mod.name === "Stellarium miner" ? (stellariumHourly || 5) : 1;
 }
 
 // Topological order by `needs`, stable in table order.
@@ -404,7 +418,7 @@ const BaseMath = {
   PROVENANCE, MODULES, MATERIAL_BUILDINGS, STAR_BONUSES, BODY_BONUSES, BODY_NODE_BONUSES, FOUNDING_BUNDLE, ESTIMATES, TICKS_PER_DAY, UPKEEP_CAP,
   levelCostCumulative, levelCost, levelsCost,
   stellariumStep, unlockCost, tierCost, tiersCost,
-  moduleBoost, expectedOutputPerTick, unlockOrder,
+  moduleBoost, expectedOutputPerTick, guaranteedOutputPerTick, extraDropChance, tickHours, unlockOrder,
   avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay, stellariumPerDayStar, unlockEta,
   defaultModules, normalizeBase, planUnlocks, materialsFor, planBase,
 };

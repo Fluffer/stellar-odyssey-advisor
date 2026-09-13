@@ -85,6 +85,16 @@ describe("BaseMath boost, output, upkeep, income", () => {
     near(BM.moduleBoost(mod("Resource miner", 100, 50), 20), 180);
     near(BM.expectedOutputPerTick(mod("Resource miner", 250, 0), 0), 70000);
     near(BM.expectedOutputPerTick(mod("Stellarium miner", 20, 2), 0), 1.204);
+    // Quantum server: half level, plus the game's flat +3 cores per tick.
+    // Level 69 at +75% efficiency -> boost 60.375: 1 sure + 3 flat, 60.375% of one more.
+    near(BM.moduleBoost(mod("Quantum server", 69, 0), 75), 60.375);
+    near(BM.guaranteedOutputPerTick(mod("Quantum server", 69, 0), 75), 4);
+    near(BM.extraDropChance(mod("Quantum server", 69, 0), 75), 60.375);
+    near(BM.expectedOutputPerTick(mod("Quantum server", 69, 0), 75), 4.60375);
+    // Bulk producers carry no flat bonus; the miner ticks on the base's interval, the rest hourly.
+    near(BM.guaranteedOutputPerTick(mod("Resource miner", 48, 0), 75), 20000);
+    assert.equal(BM.tickHours(mod("Stellarium miner", 1, 0), 5), 5);
+    assert.equal(BM.tickHours(mod("Quantum server", 1, 0), 5), 1);
   });
   test("unlock order respects needs", () => {
     const order = BM.unlockOrder();
@@ -287,7 +297,7 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     near(plan.stellariumPerDayStar, 28.8, "footnote variant keeps the A-type rate 6");
     const qs = plan.targets.find(t => t.name === "Quantum server");
     assert.equal(qs.from, 0); assert.equal(qs.to, 50); assert.equal(qs.perMaterial, 1275);
-    near(qs.boostAtTarget, 25); near(qs.outputAtTarget, 1.25);
+    near(qs.boostAtTarget, 25); near(qs.outputAtTarget, 4.25); // 1 sure + 3 flat + 25% of one more
     const craft = plan.targets.find(t => t.name === "Craftron 3000");
     assert.equal(craft.upkeepPerHourAtTarget, 0, "active modules pay no upkeep");
   });

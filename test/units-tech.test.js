@@ -6,6 +6,7 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const core = require("../advisor-core.js");
+const { coreIncome } = require("../lib/tech.js");
 
 describe("unitStepCost", () => {
   test("golden values at levels 0.1, 1, 10, 50", () => {
@@ -26,6 +27,26 @@ describe("cumulativeUnitCost", () => {
     const c02 = core.cumulativeUnitCost(0, 2);
     const c12 = core.cumulativeUnitCost(1, 2);
     assert.ok(Math.abs(c02 - (c01 + c12)) < 1e-6, "cumulative(0,2) should equal cumulative(0,1) + cumulative(1,2)");
+  });
+});
+
+describe("coreIncome", () => {
+  test("battling rate follows min(18, 8 + level/6); no base -> no server", () => {
+    assert.deepEqual(coreIncome({ skillLevels: { battling: 30 }, player: { skills: {} } }),
+      { battlingLevel: 30, battlingPerHour: 13, quantumServer: null, ratePerHour: 13 });
+    assert.equal(coreIncome({ skillLevels: { battling: 62 }, player: { skills: {} } }).battlingPerHour, 18);
+    assert.equal(coreIncome({ player: { skills: {} } }).ratePerHour, 18);
+  });
+  test("a running Quantum server adds its hourly tick", () => {
+    const base = { name: "B", modules: [{ name: "Quantum server", unlocked: true, active: true, level: 69, tier: 0 }] };
+    const inc = coreIncome({ skillLevels: { battling: 62 }, player: { skills: { base_module_efficiency_boost: 75 } }, base });
+    assert.equal(inc.quantumServer.guaranteedPerHour, 4);
+    assert.ok(Math.abs(inc.quantumServer.extraChance - 60.375) < 1e-9);
+    assert.ok(Math.abs(inc.ratePerHour - 22.60375) < 1e-9);
+    const idle = coreIncome({ skillLevels: { battling: 62 }, player: { skills: {} }, base: { ...base, modules: [{ ...base.modules[0], active: false }] } });
+    assert.equal(idle.quantumServer, null);
+    const plan = core.planTech({ quantum_cores: 0, skillLevels: { battling: 62 }, player: { skills: { base_module_efficiency_boost: 75 } }, base });
+    assert.equal(plan.maxOut.defaultRatePerHour, 22.6);
   });
 });
 

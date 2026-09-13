@@ -664,6 +664,8 @@ function fmtC(n) {
 // Exact integer, comma-grouped (no k/M/B abbreviation) for material counts
 // where the reader needs to compare against an in-game exact quantity.
 function fmtN(n) { return Math.round(Number(n) || 0).toLocaleString('en-US'); }
+// Module output: whole numbers for bulk products, two decimals for the small ones.
+function fmtOutput(n) { n = Number(n) || 0; return n >= 100 ? fmtN(n) : n.toFixed(2); }
 const SKILL_LABELS = {
   efficiency: 'skill.efficiency', storage: 'skill.storage', maneuverability: 'skill.maneuverability',
   critical_chance: 'skill.critical_chance', critical_damage: 'skill.critical_damage', dual_shot: 'skill.dual_shot'
@@ -1037,19 +1039,38 @@ function calcQcGap() {
     const saved = JSON.parse(localStorage.getItem('advisor-qc-rate') || 'null');
     if (saved && !calcQcGap._loaded) {
       calcQcGap._loaded = true;
-      rateEl.value = saved.rate;
+      // A typed rate is kept only while the computed default it overrode is
+      // unchanged; once the game state moves the rate, the new default wins.
+      if (saved.base === d.tech.maxOut.defaultRatePerHour) rateEl.value = saved.rate;
       dailyEl.value = saved.daily;
     }
   } catch (e) {}
   const rate = parseFloat(rateEl.value) || 0;
   const daily = parseFloat(dailyEl.value) || 0;
-  try { localStorage.setItem('advisor-qc-rate', JSON.stringify({ rate: rateEl.value, daily: dailyEl.value })); } catch (e) {}
+  try { localStorage.setItem('advisor-qc-rate', JSON.stringify({ rate: rateEl.value, daily: dailyEl.value, base: d.tech.maxOut.defaultRatePerHour })); } catch (e) {}
   const gap = d.tech.maxOut.coresGap;
   const perDay = rate * 24 + daily;
   if (gap <= 0) { out.textContent = t('qc.done'); return; }
   if (perDay <= 0) { out.textContent = t('qc.no_rate'); return; }
   const days = gap / perDay;
   out.textContent = days >= 2 ? t('qc.dur_dh', { d: Math.floor(days), h: Math.round((days % 1) * 24) }) : Math.round(days * 24) + t('common.hours');
+}
+
+// Where the hourly core rate comes from: battling drops by level, plus the
+// base's Quantum server tick when one is running.
+function techIncomeHtml(inc) {
+  if (!inc) return '';
+  const parts = [];
+  parts.push(inc.battlingPerHour == null
+    ? I18n.t('tech.income_battling_unknown')
+    : I18n.t('tech.income_battling', { n: inc.battlingPerHour, lvl: inc.battlingLevel }));
+  if (inc.quantumServer) {
+    const q = inc.quantumServer;
+    parts.push(I18n.t('tech.income_quantum_server', { lvl: q.level, n: q.guaranteedPerHour, pct: q.extraChance.toFixed(1), exp: q.expectedPerHour.toFixed(2) }));
+  } else {
+    parts.push(I18n.t('tech.income_no_quantum_server'));
+  }
+  return '<div style="font-size:11px;color:var(--dim);margin-top:4px">' + parts.join(' &middot; ') + '</div>';
 }
 
 // NOTE: the parameter shadows the global t() helper, so this function reaches
@@ -1066,8 +1087,9 @@ function renderTech(t) {
     html += card(I18n.t('tech.card_gap_after_stock'), fmtC(t.maxOut.coresGap));
     html += '<div class="card"><div class="k">' + I18n.t('tech.time_to_cover_gap') + '</div><div class="v" id="qcGapTime">&mdash;</div>' +
       '<div style="font-size:11px;color:var(--dim);margin-top:4px">' +
-      '<input type="number" id="qcRate" value="18" min="0" style="width:44px" onchange="calcQcGap()" oninput="calcQcGap()"> ' + I18n.t('tech.per_hour') + ' + ' +
-      '<input type="number" id="qcDaily" value="150" min="0" style="width:52px" onchange="calcQcGap()" oninput="calcQcGap()"> ' + I18n.t('common.per_day') + '</div></div>';
+      '<input type="number" id="qcRate" value="' + t.maxOut.defaultRatePerHour + '" min="0" step="0.1" style="width:52px" onchange="calcQcGap()" oninput="calcQcGap()"> ' + I18n.t('tech.per_hour') + ' + ' +
+      '<input type="number" id="qcDaily" value="' + t.maxOut.defaultDailyBonus + '" min="0" style="width:52px" onchange="calcQcGap()" oninput="calcQcGap()"> ' + I18n.t('common.per_day') + '</div>' +
+      techIncomeHtml(t.maxOut.income) + '</div>';
   }
   html += '</div>';
 
@@ -2029,7 +2051,8 @@ function renderBase(b) {
       { label: t('common.level'), numeric: true, getValue: r => r.level, render: r => String(r.level) },
       { label: t('base.col_tier'), numeric: true, getValue: r => r.tier, render: r => String(r.tier) },
       { label: t('base.col_boost'), numeric: true, getValue: r => r.boost, render: r => r.boost.toFixed(1) + '%' },
-      { label: t('base.col_output_tick'), numeric: true, getValue: r => r.output, render: r => r.output.toFixed(2) },
+      { label: t('base.col_output_tick'), numeric: true, getValue: r => r.output, render: r => fmtOutput(r.output) + (r.guaranteed !== undefined && r.extraChance > 0 ? ' <span style="color:var(--dim)">' + t('base.output_split', { g: fmtOutput(r.guaranteed), pct: r.extraChance.toFixed(1) }) + '</span>' : '') },
+      { label: t('base.col_output_hour'), numeric: true, getValue: r => r.tickHours ? r.output / r.tickHours : r.output, render: r => fmtOutput(r.tickHours ? r.output / r.tickHours : r.output) + (r.tickHours && r.tickHours !== 1 ? ' <span style="color:var(--dim)">' + t('base.tick_every_h', { h: r.tickHours }) + '</span>' : '') },
       { label: t('base.col_next_level'), numeric: true, getValue: r => r.nextLevelCost, render: r => fmtC(r.nextLevelCost) + t('base.of_each_colon', { list: r.materials.map(m => esc(materialLabel(m))).join(', ') }) },
       { label: t('base.col_next_tier'), numeric: true, getValue: r => r.nextTierCost, render: r => t('base.stellarium_amount', { n: r.nextTierCost }) },
     ]);
