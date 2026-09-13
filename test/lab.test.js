@@ -445,6 +445,9 @@ describe("planLab (lib/lab.js)", () => {
 
     const lab = planLab(Object.assign(liveState(), { base: foundedBase }), { capsules: 10 });
     assert.equal(lab.founded, true);
+    assert.deepEqual(Object.keys(lab.baseProduction), ["stellarium"], "miner only: nothing else is produced");
+    const mining = planLab(Object.assign(liveState(), { base: { ...foundedBase, modules: [...foundedBase.modules, { name: "Resource miner", unlocked: true, active: true, level: 48, selection: ["silicon", "argon"] }] } }), { capsules: 10 });
+    assert.ok(Math.abs(mining.baseProduction.silicon - 29600 / 2) < 1e-9, "level 48 at +0%: 20,000 sure + 48% of 20,000 = 29,600 a tick, split two ways");
     assert.equal(lab.targets.baseFounding, undefined);
     assert.equal(lab.targets.capsules.afterFounding, null);
     assert.equal(lab.foundingBundle, null);

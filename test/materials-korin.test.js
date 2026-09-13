@@ -105,6 +105,30 @@ describe("planPets: pet food burn", () => {
   });
 });
 
+describe("planMaterials: base production", () => {
+  test("rows carry the base's hourly rate and the time to close the deficit", () => {
+    const base = { name: "B", modules: [
+      { name: "Material generator", unlocked: true, active: true, level: 48, tier: 0, selection: ["bones", "ectoplasm"] },
+      { name: "Resource miner", unlocked: true, active: true, level: 48, tier: 0, selection: ["silicon"] },
+    ] };
+    const m = planMaterials({
+      blueprints: [{ name: "X", quantity: 1, charges: 1, currency_use: [{ normalCurrency: "silicon", amount: 100000 }], material_use: [{ material: "bones", amount: 1000 }] }],
+      materials: [{ name: "bones", quantity: 100 }],
+      rareCurrencies: { silicon: 10000 },
+      player: { skills: { base_module_efficiency_boost: 75 } }, base,
+    });
+    const bones = m.npcDrops.find(r => r.material === "bones");
+    assert.ok(Math.abs(bones.basePerHour - 184) < 1e-9, "368 a tick split two ways");
+    assert.ok(Math.abs(bones.hoursToCover - 900 / 184) < 1e-9);
+    const ecto = m.npcDrops.find(r => r.material === "ectoplasm");
+    assert.equal(ecto.hoursToCover, null, "no deficit, nothing to cover");
+    const si = m.gathered.find(r => r.material === "silicon");
+    assert.ok(Math.abs(si.basePerHour - 36800) < 1e-9);
+    assert.ok(Math.abs(si.hoursToCover - 90000 / 36800) < 1e-9);
+    assert.equal(planMaterials({ blueprints: [], materials: [] }).npcDrops[0].basePerHour, 0, "no base: zero rate");
+  });
+});
+
 describe("planMaterials", () => {
   // Synthetic state: 2 blueprints sharing "bones" (an NPC drop material),
   // one laboratory material, and one uncategorized ("other") material.

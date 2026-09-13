@@ -481,6 +481,8 @@ const EN = {
   "mat.col_need": "Need",
   "mat.col_deficit": "Deficit",
   "mat.col_farm": "Farm",
+  "mat.col_base_rate": "Base / h",
+  "mat.base_covers_in": "deficit covered in {t}",
 
   // ---- lab, base, summary cards ----
   "lab.time_lt_1_min": "< 1 min",
@@ -497,6 +499,7 @@ const EN = {
   "lab.card_binding": "Binding resource",
   "lab.pct_covered": "{n}% covered",
   "lab.raw_resources": "Raw resources",
+  "lab.base_makes": "base makes {rate}/h",
   "lab.all_covered": "all covered",
   "lab.nothing_to_gather": " nothing to gather or buy",
   "lab.inputs_first_one": " &middot; {n} input must be produced first ({names})",
@@ -658,6 +661,9 @@ const EN = {
   "base.col_boost": "Boost",
   "base.col_output_tick": "Output / tick",
   "base.col_output_hour": "Output / h",
+  "base.col_produces": "Produces",
+  "base.produces_none": "nothing selected",
+  "base.produces_split": "(split {n} ways)",
   "base.output_split": "{g} sure + {pct}% one more",
   "base.tick_every_h": "tick every {h} h",
   "base.col_next_level": "Next level",
@@ -1476,6 +1482,8 @@ const ZH = {
   "mat.col_need": "需求",
   "mat.col_deficit": "缺口",
   "mat.col_farm": "刷取",
+  "mat.col_base_rate": "基地/小时",
+  "mat.base_covers_in": "缺口 {t} 后补齐",
 
   // ---- lab, base, summary cards ----
   "lab.time_lt_1_min": "< 1 分钟",
@@ -1492,6 +1500,7 @@ const ZH = {
   "lab.card_binding": "瓶颈资源",
   "lab.pct_covered": "已满足 {n}%",
   "lab.raw_resources": "原始资源",
+  "lab.base_makes": "基地每小时产出 {rate}",
   "lab.all_covered": "全部满足",
   "lab.nothing_to_gather": " 无需采集或购买",
   "lab.inputs_first_one": " &middot; 有 {n} 项输入需要先行生产（{names}）",
@@ -1653,6 +1662,9 @@ const ZH = {
   "base.col_boost": "加成",
   "base.col_output_tick": "每刻产出",
   "base.col_output_hour": "每小时产出",
+  "base.col_produces": "产品",
+  "base.produces_none": "未选择",
+  "base.produces_split": "（{n} 种平分）",
   "base.output_split": "保底 {g} + {pct}% 概率再得一个",
   "base.tick_every_h": "每 {h} 小时一刻",
   "base.col_next_level": "下一等级",

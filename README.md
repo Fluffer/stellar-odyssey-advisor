@@ -91,8 +91,11 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   target levels with the exact material cost (charged from each of the module's
   materials), the stockpile list with shortfalls and lab chain times, which base-tier lab
   buildings to buy first, and the upkeep bill at the targets as a share of your average
-  daily income. After founding: the live module table with boost, output, next level and
-  tier cost, and the next unlock's ETA
+  daily income. After founding: the live module table with boost, output per tick and per
+  hour (sure amount plus the extra-drop chance), what each module is set to produce, next
+  level and tier cost, and the next unlock's ETA counted in miner drops. The base's hourly
+  production also feeds the Technology tab's core income (Quantum server), the Materials
+  tab (rate and time to close each deficit) and the Lab tab's raw-resource coverage
 - **Item advisor** (Gear tab) — per-slot ship item analysis: how many levels behind the
   matching skill (battling/gathering/exploring) each item's craft-time level is and what
   recrafting now would cap its value at, weapon/shield NPC-weakness mod coverage, an engine

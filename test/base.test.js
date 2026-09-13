@@ -96,6 +96,24 @@ describe("BaseMath boost, output, upkeep, income", () => {
     assert.equal(BM.tickHours(mod("Stellarium miner", 1, 0), 5), 5);
     assert.equal(BM.tickHours(mod("Quantum server", 1, 0), 5), 1);
   });
+  test("baseProduction: a tick is split over the selected products; idle or empty modules make nothing", () => {
+    const base = BM.normalizeBase({ name: "B", stellariumHourly: 5, modules: [
+      { name: "Stellarium miner", unlocked: true, active: true, level: 188, tier: 0, selection: [""] },
+      { name: "Resource miner", unlocked: true, active: true, level: 48, tier: 0, selection: ["silicon", "dark_matter", "argon"] },
+      { name: "Material generator", unlocked: true, active: false, level: 48, tier: 0, selection: ["bones"] },
+      { name: "Quantum server", unlocked: true, active: true, level: 69, tier: 0, selection: ["quantum_cores"] },
+    ] });
+    const rows = BM.baseProduction(base, 75);
+    const by = {}; for (const r of rows) by[r.product] = r;
+    // Resource miner at +75%: boost 84, 20,000 sure + 84% of 20,000 = 36,800 a tick, a third each.
+    near(by["dark matter"].perHour, 36800 / 3); near(by.silicon.surePerHour, 20000 / 3);
+    assert.equal(by.bones, undefined, "switched-off module makes nothing");
+    near(by["quantum cores"].perHour, 4.60375);
+    near(by.stellarium.perHour, BM.expectedOutputPerTick(base.modules[0], 75) / 5);
+    const map = BM.productionByProduct(base, 75);
+    near(map.argon, 36800 / 3);
+    assert.deepEqual(BM.productionByProduct(null, 0), {});
+  });
   test("unlock order respects needs", () => {
     const order = BM.unlockOrder();
     assert.equal(order.length, 11);

@@ -163,6 +163,34 @@ function expectedOutputPerTick(mod, efficiencyBoost) {
 function tickHours(mod, stellariumHourly) {
   return mod.name === "Stellarium miner" ? (stellariumHourly || 5) : 1;
 }
+// Hourly production per product from the running modules. A tick's total is
+// split evenly over the module's selected products (observed: a Resource
+// miner on three resources paid each a third of its 40,000). The miner's
+// product is stellarium; a module with nothing selected makes nothing.
+function baseProduction(base, efficiencyBoost) {
+  const out = [];
+  if (!base) return out;
+  for (const m of base.modules) {
+    if (!m.unlocked || !m.active) continue;
+    const products = m.name === "Stellarium miner" ? ["stellarium"] : (m.selection || []);
+    if (!products.length) continue;
+    const hours = tickHours(m, base.stellariumHourly);
+    const share = 1 / products.length;
+    for (const product of products) {
+      out.push({
+        product, module: m.name,
+        perHour: expectedOutputPerTick(m, efficiencyBoost) * share / hours,
+        surePerHour: guaranteedOutputPerTick(m, efficiencyBoost) * share / hours,
+      });
+    }
+  }
+  return out;
+}
+function productionByProduct(base, efficiencyBoost) {
+  const map = {};
+  for (const p of baseProduction(base, efficiencyBoost)) map[p.product] = (map[p.product] || 0) + p.perHour;
+  return map;
+}
 
 // Topological order by `needs`, stable in table order.
 function unlockOrder() {
@@ -239,6 +267,8 @@ function normalizeBase(raw) {
       level: Number(m.level) || 0,
       tier: Number(m.tier) || 0,
       active: m.active === undefined ? !!m.unlocked : !!m.active,
+      // What the module was set up to make (game names use underscores).
+      selection: Array.isArray(m.selection) ? m.selection.filter(x => typeof x === "string" && x.trim()).map(x => x.toLowerCase().replace(/_/g, " ")) : [],
       _id: m._id || null,
     };
   });
@@ -418,7 +448,7 @@ const BaseMath = {
   PROVENANCE, MODULES, MATERIAL_BUILDINGS, STAR_BONUSES, BODY_BONUSES, BODY_NODE_BONUSES, FOUNDING_BUNDLE, ESTIMATES, TICKS_PER_DAY, UPKEEP_CAP,
   levelCostCumulative, levelCost, levelsCost,
   stellariumStep, unlockCost, tierCost, tiersCost,
-  moduleBoost, expectedOutputPerTick, guaranteedOutputPerTick, extraDropChance, tickHours, unlockOrder,
+  moduleBoost, expectedOutputPerTick, guaranteedOutputPerTick, extraDropChance, tickHours, baseProduction, productionByProduct, unlockOrder,
   avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay, stellariumPerDayStar, unlockEta,
   defaultModules, normalizeBase, planUnlocks, materialsFor, planBase,
 };

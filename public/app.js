@@ -1412,7 +1412,11 @@ function renderInventory(inv) {
 }
 
 // ---- Materials tab: blueprint material requirements vs stock ----
-function materialCols(showFarm) {
+function baseRateCell(rate, hoursToCover) {
+  if (!(rate > 0)) return '-';
+  return fmtOutput(rate) + t('tech.per_hour') + (hoursToCover != null ? ' <span style="color:var(--dim)">' + t('mat.base_covers_in', { t: fmtHours(hoursToCover) }) + '</span>' : '');
+}
+function materialCols(showFarm, showBase) {
   const cols = [
     { label: t('mat.col_material'), numeric: false, getValue: r => r.material,
       render: r => '<span class="inv-stat">' + matIcon(r.material) + '<b>' + esc(materialLabel(r.material)) + '</b></span>' },
@@ -1428,6 +1432,9 @@ function materialCols(showFarm) {
            bodyIcon(r.location, 'mat-tile xs') + '<span>' + esc(bodyLabel(r.location)) + '</span></span>')
         : '-' });
   }
+  if (showBase) {
+    cols.push({ label: t('mat.col_base_rate'), numeric: true, getValue: r => r.basePerHour || 0, render: r => baseRateCell(r.basePerHour, r.hoursToCover) });
+  }
   return cols;
 }
 
@@ -1442,7 +1449,8 @@ function renderMaterials(m) {
   // A group with nothing in it gets no heading.
   const section = function (id, list, title, note, farm) {
     if (!list || !list.length) return '';
-    return '<h2>' + title + '</h2>' + (note ? '<div class="sub">' + note + '</div>' : '') + tableHtml(id, list, materialCols(farm));
+    const showBase = list.some(r => r.basePerHour > 0);
+    return '<h2>' + title + '</h2>' + (note ? '<div class="sub">' + note + '</div>' : '') + tableHtml(id, list, materialCols(farm, showBase));
   };
   html += section('tbl-mat-npc', m.npcDrops, t('mat.npc_drops_title'), t('mat.npc_drops_note'), true);
   html += section('tbl-mat-lab', m.labMaterials, t('mat.lab_title'), t('mat.lab_note'), false);
@@ -1493,6 +1501,7 @@ function renderLab(lab, base) {
     setTabCount('lab', 0, true);
     return '<div class="empty-note">' + t('lab.empty') + '</div>';
   }
+  const baseRates = lab.baseProduction || {};
   const LM = window.LabMath;
   const capsules = labCapsuleTarget(lab.capsulesDefault);
   const chain = LM.buildChain(lab.chain);
@@ -1517,7 +1526,8 @@ function renderLab(lab, base) {
     '<span style="font-size:11px;color:var(--dim)">' + t('lab.chain_time_note', { n: fmtHours(plan.hoursSequential) }) + '</span>');
   if (plan.binding) {
     html += card(t('lab.card_binding'), '<span style="color:var(--bad)">' + esc(materialLabel(plan.binding.name)) + '</span> ' + covBar(plan.binding.coverage) +
-      '<span style="font-size:11px;color:var(--dim)">' + t('lab.pct_covered', { n: (plan.binding.coverage * 100).toFixed(0) }) + '</span>');
+      '<span style="font-size:11px;color:var(--dim)">' + t('lab.pct_covered', { n: (plan.binding.coverage * 100).toFixed(0) }) +
+      ((baseRates[plan.binding.name] || 0) > 0 ? ' &middot; ' + t('lab.base_makes', { rate: fmtOutput(baseRates[plan.binding.name]) }) : '') + '</span>');
   } else {
     // plan.raw only ever holds resources the chain CANNOT produce, and in
     // every capture so far it is empty -- so an unqualified "all covered"
@@ -1561,7 +1571,10 @@ function renderLab(lab, base) {
     { label: t('lab.col_stock'), numeric: true, getValue: r => r.stock, render: r => fmtC(r.stock) },
     { label: t('lab.col_coverage'), numeric: true, getValue: r => r.coverage, render: r => covBar(r.coverage) + (r.coverage * 100).toFixed(0) + '%' },
     { label: t('lab.col_capsules_supported'), numeric: true, getValue: r => r.unitsSupported, render: r => String(r.unitsSupported) },
-  ]);
+  ].concat(plan.raw.some(r => (baseRates[r.name] || 0) > 0) ? [
+    { label: t('mat.col_base_rate'), numeric: true, getValue: r => baseRates[r.name] || 0,
+      render: r => baseRateCell(baseRates[r.name], (baseRates[r.name] || 0) > 0 && r.needed > r.stock ? (r.needed - r.stock) / baseRates[r.name] : null) },
+  ] : []));
   }
 
   // --- upgrade ROI ---
@@ -1861,7 +1874,8 @@ function labEmuHtml(lab) {
       : '<span style="color:var(--dim)">&mdash;</span>'));
   if (emu.binding) {
     html += card(t('lab.card_binding'), '<span style="color:var(--bad)">' + esc(materialLabel(emu.binding.name)) + '</span> ' + covBar(emu.binding.coverage) +
-      '<span style="font-size:11px;color:var(--dim)">' + t('lab.pct_covered', { n: (emu.binding.coverage * 100).toFixed(0) }) + '</span>');
+      '<span style="font-size:11px;color:var(--dim)">' + t('lab.pct_covered', { n: (emu.binding.coverage * 100).toFixed(0) }) +
+      (((window.lastData && window.lastData.lab && window.lastData.lab.baseProduction || {})[emu.binding.name] || 0) > 0 ? ' &middot; ' + t('lab.base_makes', { rate: fmtOutput(window.lastData.lab.baseProduction[emu.binding.name]) }) : '') + '</span>');
   }
   html += '</div>';
 
@@ -2052,6 +2066,7 @@ function renderBase(b) {
       { label: t('base.col_tier'), numeric: true, getValue: r => r.tier, render: r => String(r.tier) },
       { label: t('base.col_boost'), numeric: true, getValue: r => r.boost, render: r => r.boost.toFixed(1) + '%' },
       { label: t('base.col_output_tick'), numeric: true, getValue: r => r.output, render: r => fmtOutput(r.output) + (r.guaranteed !== undefined && r.extraChance > 0 ? ' <span style="color:var(--dim)">' + t('base.output_split', { g: fmtOutput(r.guaranteed), pct: r.extraChance.toFixed(1) }) + '</span>' : '') },
+      { label: t('base.col_produces'), numeric: false, getValue: r => (r.selection || []).join(', '), render: r => r.name === 'Stellarium miner' ? '<span class="inv-stat">' + matIcon('stellarium') + esc(materialLabel('stellarium')) + '</span>' : ((r.selection || []).length ? r.selection.map(p => '<span class="inv-stat">' + matIcon(p) + esc(materialLabel(p)) + '</span>').join(', ') + (r.selection.length > 1 ? ' <span style="color:var(--dim)">' + t('base.produces_split', { n: r.selection.length }) + '</span>' : '') : '<span style="color:var(--dim)">' + t('base.produces_none') + '</span>') },
       { label: t('base.col_output_hour'), numeric: true, getValue: r => r.tickHours ? r.output / r.tickHours : r.output, render: r => fmtOutput(r.tickHours ? r.output / r.tickHours : r.output) + (r.tickHours && r.tickHours !== 1 ? ' <span style="color:var(--dim)">' + t('base.tick_every_h', { h: r.tickHours }) + '</span>' : '') },
       { label: t('base.col_next_level'), numeric: true, getValue: r => r.nextLevelCost, render: r => fmtC(r.nextLevelCost) + t('base.of_each_colon', { list: r.materials.map(m => esc(materialLabel(m))).join(', ') }) },
       { label: t('base.col_next_tier'), numeric: true, getValue: r => r.nextTierCost, render: r => t('base.stellarium_amount', { n: r.nextTierCost }) },
