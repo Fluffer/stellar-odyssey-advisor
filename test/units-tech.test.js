@@ -30,6 +30,15 @@ describe("cumulativeUnitCost", () => {
 });
 
 describe("planTech", () => {
+  test("a skill the player has levelled is never reported locked", () => {
+    const tech = core.planTech({ quantum_cores: 0, player: { skills: { dungeon_battle_boost: 5, base_module_efficiency_boost: 60 } } });
+    const row = k => tech.skills.find(s => s.key === k);
+    assert.equal(row("dungeon_battle_boost").locked, false);
+    assert.equal(row("dungeon_reward_boost").locked, true);
+    assert.equal(row("base_module_efficiency_boost").locked, false);
+    assert.equal(row("base_module_efficiency_boost").coresToMax, 100 * 101 - 60 * 61);
+  });
+
   test("synthetic state with no stats/clones -> battle null, shape locked", () => {
     const state = { quantum_cores: 100, player: { skills: {} } };
     const tech = core.planTech(state);
@@ -39,9 +48,10 @@ describe("planTech", () => {
     assert.deepEqual(tech.allocation, []);
     assert.equal(tech.leftoverCores, 100);
 
-    // Steam-locked skills are flagged.
+    // Locked skills are flagged: the five dungeon skills, and only those.
     const lockedKeys = tech.skills.filter(s => s.locked).map(s => s.key);
-    assert.ok(lockedKeys.includes("base_module_efficiency_boost"));
+    assert.ok(!lockedKeys.includes("base_module_efficiency_boost"));
+    assert.equal(lockedKeys.length, 5);
     assert.ok(lockedKeys.includes("dungeon_battle_boost"));
     assert.ok(lockedKeys.includes("dungeon_gather_boost"));
     assert.ok(lockedKeys.includes("dungeon_craft_boost"));
