@@ -14,7 +14,7 @@
 // 1.15M x level was replaced by base-math's module curve at call time).
 // Only window.BaseMath / module.exports leave this scope.
 (function () {
-const PROVENANCE = { client: "1.1.1", bundle: "index-BiPcVSdi.js" };
+const PROVENANCE = { client: "1.2.0", bundle: "index-CfS9fhKw.js" };
 
 // defaultTarget: the level a fresh (no stored override) target box shows.
 // 50 for every module except the two warp-capsule ones, which cost twice as
@@ -59,26 +59,39 @@ const BODY_BONUSES = {
   "Rocky Planet": "battling", "Asteroid": "battling", "Icy Planet": "gathering", "Belt": "gathering",
   "Gas Planet": "crafting", "Nebula": "crafting", "Crystal Planet": "exploring", "Comet": "exploring",
 };
+// The founded base stores the body's nodeType (client bodyTypeBonuses), not
+// its display name: rocky / icy / gas / crystal.
+const BODY_NODE_BONUSES = { rocky: "battling", icy: "gathering", gas: "crafting", crystal: "exploring" };
 const FOUNDING_BUNDLE = ["ingots", "refined crystals", "high end crystals", "propulsors", "nanoconductors"]
   .map(product => ({ product, units: 5000 }));
 
-// CONTESTED ESTIMATE. Two formulas disagree about the miner's yield by the
-// star rate (6x at rate 6), and the client cannot settle it:
-//   minerAmount        - star rate scaled by the module boost. What the
-//                        advisor has always headlined. `starTypeBonuses` is
-//                        exported by the client's constants module but never
-//                        read for stellarium anywhere in the bundle, so the
-//                        star rate may only be applied server-side.
-//   minerAmountClient  - the client's OWN drop-rate display:
-//                        (1 + floor(boost/100)) guaranteed + (boost%100)%
-//                        chance of one more = 1 + boost/100 in expectation,
-//                        with no star rate at all.
-// Both are surfaced until `statistics.stellariumObtained` starts moving (it
-// needs the base founded), at which point the observed rate settles it.
+// Stellarium per drop. The game's base header shows "Drop rate N + p% chance"
+// from the miner's boost alone: N = 1 + floor(boost/100), p = boost mod 100
+// (BaseBuildingPage: `1+Le.value` and `Re.value`). Seen live on 2026-09-13,
+// client 1.2.0: miner level 150, module efficiency +50%, boost 225% ->
+// "3 + 25% chance". Expected value per drop = 1 + boost/100.
+//
+// The star table (`starTypeBonuses`) is still shipped but nothing in the
+// client reads it, the placement panel shows only the body table, and the
+// wiki names the body type as the one placement choice. The server does keep
+// a `stellariumHourly` on the founded base equal to the star's table rate
+// (5 on a G type), so a server-side multiplier cannot be ruled out until
+// drops are observed: `minerAmountStar` is that variant, a footnote only.
+// The observed drop (history log, see lib/income.js) is what settles it.
+//
+// Cadence: one drop every 5 hours (`base.nextStellariumTick`, the header's
+// "Next drop in"). The miner's module card also prints "(3 /hour)" -- that
+// is the generic passive-module output label, and the developer confirmed
+// on 2026-09-13 that it should not say "per hour" for the miner: the amount
+// is per 5-hour tick. Do not read the card label as an hourly rate.
 const ESTIMATES = {
   STELLARIUM_TICK_HOURS: 5,
-  minerAmount: (starRate, boost) => (starRate || 0) * (1 + (boost || 0) / 100),
-  minerAmountClient: (starRate, boost) => 1 + (boost || 0) / 100,
+  dropRate: boost => ({
+    guaranteed: 1 + Math.floor((boost || 0) / 100),
+    chance: Math.round(((boost || 0) % 100) * 100) / 100,
+  }),
+  minerAmount: boost => 1 + (boost || 0) / 100,
+  minerAmountStar: (starRate, boost) => (starRate || 0) * (1 + (boost || 0) / 100),
 };
 // A module ticks ONCE AN HOUR: the card counts down "Next tick" as
 // 60 - module.tickCounter*10 minutes (a 10-minute worker advances the
@@ -159,7 +172,7 @@ function avgDailyIncome(lifetimeCredits, registeredSec, nowSec) {
 //   t = floor(avgDaily / 24 / 2 / 9 / <passive AND unlocked count> / 2)
 //   t *= (1 - pvpBaseBoost/100); if (reduction) t *= (1 - reduction/100)
 //   per module: floor(t * (1 + moduleBoost/100))
-// The OUTER floor is per module and was missing here. `passiveCount` is the
+// The OUTER floor is per module. `passiveCount` is the
 // divisor the game uses: every unlocked passive module, active or not -- but
 // only ACTIVE ones are summed, which is the caller's job.
 function upkeepPerTick(avgDaily, passiveCount, boost, pvpBaseBoost, upkeepReduction) {
@@ -172,14 +185,22 @@ function upkeepPerTick(avgDaily, passiveCount, boost, pvpBaseBoost, upkeepReduct
 }
 function questsCoverage(claimed) { return 0.15 * Math.min(5, Math.max(0, claimed || 0)); }
 
-// ESTIMATE: stellarium per day at a star rate and miner boost.
-function stellariumPerDay(starRate, boost) {
-  return ESTIMATES.minerAmount(starRate, boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
+// Stellarium per day at a miner boost: the game's drop rate, 24/5 drops a day.
+function stellariumPerDay(boost) {
+  return ESTIMATES.minerAmount(boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
 }
-// The same day, under the client's own drop-rate formula (no star rate).
-// The pessimistic end of the range; see the ESTIMATES comment.
-function stellariumPerDayClient(starRate, boost) {
-  return ESTIMATES.minerAmountClient(starRate, boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
+// The unconfirmed server-side variant (star rate x drop); see ESTIMATES.
+function stellariumPerDayStar(starRate, boost) {
+  return ESTIMATES.minerAmountStar(starRate, boost) * (24 / ESTIMATES.STELLARIUM_TICK_HOURS);
+}
+// When the next unlock is paid: drops still needed, counting only the
+// guaranteed part of each drop, and the tick (unix seconds) that pays the
+// last of them -- drops land every STELLARIUM_TICK_HOURS from nextTick.
+function unlockEta(cost, held, boost, nextTick) {
+  const short = Math.max(0, (cost || 0) - (held || 0));
+  const drops = short > 0 ? Math.ceil(short / ESTIMATES.dropRate(boost).guaranteed) : 0;
+  const tick = Number(nextTick) || 0;
+  return { drops, etaTick: drops > 0 && tick > 0 ? tick + (drops - 1) * ESTIMATES.STELLARIUM_TICK_HOURS * 3600 : null };
 }
 
 // Lab math is needed for material production times. In Node it is a
@@ -212,6 +233,12 @@ function normalizeBase(raw) {
     stellarium: Number(raw.stellarium) || 0,
     nextStellariumTick: Number(raw.nextStellariumTick) || 0,
     upkeepReduction: Number(raw.catalystUpkeepReduction) || 0,
+    // Fields the 1.2.0 server writes on a founded base. stellariumHourly is
+    // the star's table rate; bodyType is the body's nodeType (rocky, icy...).
+    stellariumHourly: Number(raw.stellariumHourly) || 0,
+    bodyType: typeof raw.bodyType === "string" ? raw.bodyType : null,
+    systemId: raw.systemId || null,
+    bodyId: raw.bodyId || null,
     modules,
   };
 }
@@ -219,12 +246,12 @@ function normalizeBase(raw) {
 // Unlock plan in topological order. The Stellarium miner comes with
 // founding (cost 0). Each further unlock costs unlockCost(N) with N = modules
 // unlocked before it. ETA divides the cumulative stellarium still to pay by
-// the ESTIMATED daily miner income.
-function planUnlocks(modules, starRate, minerBoost) {
+// the daily miner income at the given boost (drop timing is the estimate).
+function planUnlocks(modules, minerBoost) {
   const order = unlockOrder();
   const byName = {};
   for (const m of modules || []) byName[m.name] = m;
-  const perDay = stellariumPerDay(starRate, minerBoost);
+  const perDay = stellariumPerDay(minerBoost);
   let unlockedCount = (modules || []).filter(m => m.unlocked).length;
   let cumulative = 0;
   return order.map(name => {
@@ -270,15 +297,20 @@ function planBase(input) {
   const minerBoost = miner && miner.unlocked ? moduleBoost(miner, eff) : 0;
   const starRate = Number(input.starRate) || 0;
 
-  const unlocks = planUnlocks(modules, starRate, minerBoost);
+  const unlocks = planUnlocks(modules, minerBoost);
   const last = unlocks[unlocks.length - 1];
   const totalStellariumLeft = last ? last.cumulative : 0;
-  const perDay = stellariumPerDay(starRate, minerBoost);
+  const perDay = stellariumPerDay(minerBoost);
 
   // Targets: every module with a level box; default is the module's
-  // defaultTarget (50, 10 for the warp-capsule modules).
+  // defaultTarget (50, 10 for the warp-capsule modules). Once founded, a
+  // locked module has a target only when the player set one, and an
+  // unlocked module's default is never below its current level.
   const levels = input.levels || {};
-  const targetList = modules.map(m => ({ name: m.name, toLevel: levels[m.name] !== undefined ? levels[m.name] : (m.defaultTarget || 50) }));
+  const targetList = modules
+    .filter(m => !input.founded || m.unlocked || Number(levels[m.name]) > 0)
+    .map(m => ({ name: m.name, toLevel: levels[m.name] !== undefined ? levels[m.name]
+      : (input.founded ? Math.max(m.defaultTarget || 50, m.level || 0) : (m.defaultTarget || 50)) }));
   const mats = materialsFor(targetList, modules);
   const targets = mats.perModule.map(pm => {
     const m = byName[pm.name];
@@ -337,7 +369,7 @@ function planBase(input) {
   const stocks = input.stocks || {};
   const stockOf = name => (LM ? (stocks[LM.normName(name)] || 0) : (stocks[name] || 0));
   const chain = LM ? LM.buildChain(input.chainBuildings || []) : { list: [], byProduct: {} };
-  const stockpile = Object.entries(mats.perMaterial).map(([material, row]) => {
+  const stockpile = Object.entries(mats.perMaterial).filter(([, row]) => row.needed > 0).map(([material, row]) => {
     const info = MATERIAL_BUILDINGS[material] || { building: null, inputs: [], baseTier: false };
     const bought = !!chain.byProduct[LM ? LM.normName(material) : material];
     const stock = stockOf(material);
@@ -356,22 +388,24 @@ function planBase(input) {
   return {
     unlocks, totalStellariumLeft, stellariumPerDay: perDay,
     daysToAllUnlocks: perDay > 0 ? totalStellariumLeft / perDay : Infinity,
-    // Pessimistic end of the contested miner-yield estimate.
-    stellariumPerDayClient: stellariumPerDayClient(starRate, minerBoost),
-    daysToAllUnlocksClient: (() => {
-      const low = stellariumPerDayClient(starRate, minerBoost);
-      return low > 0 ? totalStellariumLeft / low : Infinity;
+    // The game's drop-rate chip for the miner at its current boost.
+    dropRate: ESTIMATES.dropRate(minerBoost),
+    // Unconfirmed server-side variant (star rate x drop); footnote only.
+    stellariumPerDayStar: stellariumPerDayStar(starRate, minerBoost),
+    daysToAllUnlocksStar: (() => {
+      const hi = stellariumPerDayStar(starRate, minerBoost);
+      return hi > 0 ? totalStellariumLeft / hi : Infinity;
     })(),
     targets, stockpile, buyFirst, upkeep, upkeepNow,
   };
 }
 
 const BaseMath = {
-  PROVENANCE, MODULES, MATERIAL_BUILDINGS, STAR_BONUSES, BODY_BONUSES, FOUNDING_BUNDLE, ESTIMATES, TICKS_PER_DAY, UPKEEP_CAP,
+  PROVENANCE, MODULES, MATERIAL_BUILDINGS, STAR_BONUSES, BODY_BONUSES, BODY_NODE_BONUSES, FOUNDING_BUNDLE, ESTIMATES, TICKS_PER_DAY, UPKEEP_CAP,
   levelCostCumulative, levelCost, levelsCost,
   stellariumStep, unlockCost, tierCost, tiersCost,
   moduleBoost, expectedOutputPerTick, unlockOrder,
-  avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay, stellariumPerDayClient,
+  avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay, stellariumPerDayStar, unlockEta,
   defaultModules, normalizeBase, planUnlocks, materialsFor, planBase,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = BaseMath;

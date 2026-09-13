@@ -325,7 +325,8 @@ if (!snapshots.length) {
         if (kind === "table cell" && !inner.includes("<b>")) continue; // a value, not a name
         const txt = textOf(inner);
         if (!txt || txt.length > 70) continue;
-        if (MODULES.has(txt.toLowerCase())) continue;
+        // A module name may carry a status word ("Stellarium miner unlocked").
+        if ([...MODULES].some(mn => txt.toLowerCase() === mn || txt.toLowerCase().startsWith(mn + " "))) continue;
         if (PLAIN_ON_PURPOSE.some(rx => rx.test(txt))) continue;
         const term = namesSomething(txt);
         if (!term) continue;

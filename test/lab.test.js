@@ -362,6 +362,100 @@ describe("planLab (lib/lab.js)", () => {
     const lab = planLab({ commonResources: {}, materials: [] }, { capsules: 10 });
     assert.equal(lab.available, false);
     assert.equal(lab.targets, null);
+    assert.equal(lab.baseTier, null);
+  });
+
+  // Live shape of LaboratoryStore.base on client 1.2.0 (2026-09-13): four of
+  // the five base-tier buildings bought, 100,000 of each input per unit.
+  const baseLab = () => ({
+    buildings: [
+      { building: "Aeroforge", level: 11, currency_use: ["gold", "ruby", "sulfur", "hydrogen"], material_use: [], produce: ["aerolite"], input: 100000, output: 1, timer: 45 },
+      { building: "Cryovault", level: 10, currency_use: ["silver", "emerald", "carbon", "helium"], material_use: [], produce: ["cryovita"], input: 100000, output: 1, timer: 45 },
+      { building: "Ferric Mill", level: 10, currency_use: ["copper", "sapphire", "water", "methane"], material_use: [], produce: ["ferricrystal"], input: 100000, output: 1, timer: 45 },
+      { building: "Prism Nexus", level: 10, currency_use: ["platinum", "diamond", "nitrogen", "ammonia"], material_use: [], produce: ["luminaris"], input: 100000, output: 1, timer: 45 },
+    ],
+    nextBaseCost: 100000000, nextBuildingCost: 0,
+  });
+
+  test("base-tier buildings join the chain and get their own rows", () => {
+    const state = Object.assign(liveState(), { baseLab: baseLab() });
+    state.materials.push({ name: "aerolite", quantity: 7 });
+    const lab = planLab(state, { capsules: 10 });
+    // in the chain, so the emulator can time aerolite; the capsule plan is untouched
+    assert.ok(lab.chain.find(b => b.building === "Aeroforge"));
+    assert.equal(LabMath.buildChain(lab.chain).byProduct["aerolite"].name, "Aeroforge");
+    assert.equal(lab.targets.capsules.buildings.find(b => b.name === "Aeroforge").unitsToRun, 0);
+    assert.equal(lab.targets.capsules.ready, true);
+    const rows = lab.baseTier.rows;
+    assert.deepEqual(rows.map(r => r.building), ["Aeroforge", "Cryovault", "Ferric Mill", "Prism Nexus", "Rare Material Facility"]);
+    const aero = rows.find(r => r.building === "Aeroforge");
+    assert.equal(aero.bought, true); assert.equal(aero.level, 11); assert.equal(aero.perUnit, 100000);
+    assert.ok(Math.abs(aero.timerNow - 43.9) < 1e-9);
+    assert.ok(Math.abs(aero.unitsPerHour - 3600 / 43.9) < 1e-9);
+    assert.deepEqual(aero.inputs, ["gold", "ruby", "sulfur", "hydrogen"]);
+    // gold 14.8M is the scarcest of its four inputs -> 148 units
+    assert.equal(aero.unitsFromStock, 148);
+    assert.equal(aero.stock, 7);
+    const rare = rows.find(r => r.building === "Rare Material Facility");
+    assert.equal(rare.bought, false); assert.equal(rare.level, null); assert.equal(rare.timerNow, null);
+    assert.equal(rare.unitsFromStock, null);
+    assert.deepEqual(rare.inputs, ["argon", "cobalt", "dark matter", "silicon"]);
+    // The live store carried a price but no nextBase: the panel offers
+    // nothing, and the client's lock list names this building -> locked.
+    assert.equal(rare.status, "locked");
+    assert.equal(aero.status, "bought");
+    assert.equal(lab.baseTier.nextBase, null);
+    assert.equal(lab.baseTier.nextBaseCost, 100000000);
+    assert.equal(lab.baseTier.panelOpened, true);
+  });
+
+  test("base-tier: the building the panel offers next is 'next' at nextBaseCost, the lock list stays locked", () => {
+    const bl = baseLab();
+    bl.buildings = bl.buildings.slice(0, 3); // Prism Nexus not yet bought
+    bl.nextBase = "Prism Nexus"; bl.nextBaseCost = 50000000;
+    const lab = planLab(Object.assign(liveState(), { baseLab: bl }), { capsules: 10 });
+    const by = Object.fromEntries(lab.baseTier.rows.map(r => [r.building, r.status]));
+    assert.equal(by["Prism Nexus"], "next");
+    assert.equal(by["Rare Material Facility"], "locked");
+    assert.equal(by["Aeroforge"], "bought");
+    assert.equal(lab.baseTier.nextBase, "Prism Nexus");
+    assert.equal(lab.baseTier.nextBaseCost, 50000000);
+  });
+
+  test("base-tier without the panel opened: table rows only, nothing bought, panelOpened false", () => {
+    const lab = planLab(Object.assign(liveState(), { baseLab: { buildings: [], nextBaseCost: 0, nextBuildingCost: 0 } }), { capsules: 10 });
+    assert.equal(lab.baseTier.rows.length, 5);
+    assert.ok(lab.baseTier.rows.every(r => !r.bought && r.perUnit === null));
+    assert.deepEqual(lab.baseTier.rows.map(r => r.status), ["unknown", "unknown", "unknown", "unknown", "locked"]);
+    assert.equal(lab.baseTier.panelOpened, false);
+    assert.equal(lab.chain.length, liveBuildings().length);
+    // and with no baseLab at all
+    const none = planLab(liveState(), { capsules: 10 });
+    assert.equal(none.baseTier.rows.length, 5);
+    assert.equal(none.baseTier.panelOpened, false);
+  });
+
+  test("founded base: no founding target, no after-founding capsule plan, no bundle", () => {
+    const foundedBase = { name: "Home", stellarium: 0, modules: [{ name: "Stellarium miner", unlocked: true, level: 1 }] };
+    const pre = planLab(liveState(), { capsules: 10 });
+    assert.equal(pre.founded, false);
+    assert.ok(pre.targets.baseFounding);
+    assert.ok(pre.targets.capsules.afterFounding);
+    assert.equal(pre.foundingBundle.length, 5);
+
+    const lab = planLab(Object.assign(liveState(), { base: foundedBase }), { capsules: 10 });
+    assert.equal(lab.founded, true);
+    assert.equal(lab.targets.baseFounding, undefined);
+    assert.equal(lab.targets.capsules.afterFounding, null);
+    assert.equal(lab.foundingBundle, null);
+    // the capsule plan itself is unchanged by founding
+    assert.equal(lab.targets.capsules.hoursPipelined, pre.targets.capsules.hoursPipelined);
+    assert.equal(lab.targets.capsules.ready, pre.targets.capsules.ready);
+    // degraded state keeps the flag too
+    const none = planLab({ base: foundedBase, commonResources: {}, materials: [] }, { capsules: 10 });
+    assert.equal(none.available, false);
+    assert.equal(none.founded, true);
+    assert.equal(none.foundingBundle, null);
   });
 });
 

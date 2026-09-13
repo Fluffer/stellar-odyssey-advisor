@@ -528,7 +528,7 @@ function renderOverrideLosses(list) {
 // Per-activity stat panel (like the game's player-page bonus display):
 // what is active during each activity, with the cap where one exists.
 // d.contextTotals: { ctx: [{ stat, category, total, totalText, cap, capText, relevant }] }
-function renderContextTotals(ct) {
+function renderContextTotals(ct, hideStats) {
   if (!ct) return '';
   const order = ['default', 'exploring', 'crafting', 'galaxyboss', 'dungeons', 'voyager'];
   const catOrder = ['battling', 'boost', 'utility'];
@@ -536,7 +536,7 @@ function renderContextTotals(ct) {
   for (const ctx of order) {
     // Only what actually does something during this activity; inherited
     // stats with no effect here are noise.
-    const rows = ct[ctx] && ct[ctx].filter(r => r.relevant);
+    const rows = ct[ctx] && ct[ctx].filter(r => r.relevant && !(hideStats && hideStats.has(r.stat)));
     if (!rows) continue;
     html += '<div class="item"><h3 style="text-transform:capitalize"><span class="inv-stat">' + actIcon(ctx) +
       '<span>' + esc(actLabel(ctx)) + '</span></span></h3>';
@@ -585,12 +585,12 @@ function mergeKey(plan, step, group) {
 }
 
 function renderMerges(plans, player, reqs, doneSet, prevKeys) {
-  if (!plans.length) return '<div class="empty-note">' + t('merges.none_possible') + '</div>';
   let html = '<div class="sub">' + t('merges.craft_header', {lvl: player.craftLevel, bonus: player.rangeBonus, success: player.successBonus.toFixed(1)}) + '</div>';
   if (reqs && reqs.length) {
     html += '<div class="sub">' + t('merges.tier_reqs', {list:
       reqs.map(m => t('merges.tier_req_item', {rarity: esc(rarityLabel(m.rarity)), n: m.resultNeeded})).join(' &middot; ')}) + '</div>';
   }
+  if (!plans.length) return html + '<div class="empty-note">' + t('merges.none_possible') + '</div>';
   for (const p of plans) {
     const endTier = p.steps.length ? p.steps[p.steps.length - 1].to : null;
     html += '<div class="merge-plan"><h3><span class="inv-stat">' + catIcon(p.stat, endTier, null, true) +
@@ -724,28 +724,37 @@ function renderUnits(u) {
   // --- recommendation ---
   html += '<h2>' + t('units.h_recommendation') + '</h2><div class="list">';
   const cd = u.clones.damage;
+  let recNo = 0;
+  const recRow = body => '<div class="row"><span class="num">' + (++recNo) + '</span><span>' + body + '</span></div>';
   if (u.clones.nextPrice !== null && cd.perPctUpgradeCost && cd.perPctBuyCost) {
     const ratio = cd.perPctBuyCost / cd.perPctUpgradeCost;
-    html += '<div class="row"><span class="num">1</span><span>' + t('units.rec_clones', {
-      upg: fmtC(cd.perPctUpgradeCost), n: u.clones.count + 1, buy: fmtC(cd.perPctBuyCost), ratio: ratio.toFixed(1)
-    }) + '</span></div>';
+    // Skill order by damage per credit at the current levels.
+    const order = u.clones.rows.filter(r => r.marginalDamage > 0 && r.costStepAll > 0)
+      .sort((a, b) => b.marginalDamage / b.costStepAll - a.marginalDamage / a.costStepAll)
+      .map((r, i) => (i === 0 ? '<b>' : '') + esc(skillLabel(r.skill)).toLowerCase() + (i === 0 ? '</b>' : ''));
+    const args = { upg: fmtC(cd.perPctUpgradeCost), n: u.clones.count + 1, buy: fmtC(cd.perPctBuyCost) };
+    html += recRow(ratio >= 1
+      ? t('units.rec_clones', Object.assign(args, { ratio: ratio.toFixed(1), first: order[0] || '', rest: order.slice(1).join(t('units.then_sep')) }))
+      : t('units.rec_clones_buy', Object.assign(args, { ratio: (1 / ratio).toFixed(1) })));
     if (u.clones.damageBreakEvenLevel !== null) {
-      html += '<div class="row"><span class="num">2</span><span>' + t('units.rec_break_even', {
-        lvl: u.clones.damageBreakEvenLevel, at: u.clones.rows[0].level,
-        extra: u.clones.nextPrice > u.credits ? t('units.rec_break_even_cost', { n: u.clones.count + 1, c: fmtC(u.clones.nextPrice) }) : ''
-      }) + '</span></div>';
+      const at = u.clones.rows[0].level;
+      html += recRow(at < u.clones.damageBreakEvenLevel
+        ? t('units.rec_break_even', {
+          lvl: u.clones.damageBreakEvenLevel, at: at,
+          extra: u.clones.nextPrice > u.credits ? t('units.rec_break_even_cost', { n: u.clones.count + 1, c: fmtC(u.clones.nextPrice) }) : ''
+        })
+        : t('units.rec_break_even_past', { lvl: u.clones.damageBreakEvenLevel, at: at, n: u.clones.count + 1, c: fmtC(u.clones.nextPrice) }));
     }
   }
   if (u.droids.nextPrice !== null && u.droids.breakEvenLevel !== null) {
-    html += '<div class="row"><span class="num">3</span><span>' + t('units.rec_droids', {
-      lvl: u.droids.breakEvenLevel, at: u.droids.rows[0].level, n: u.droids.count + 1,
-      price: fmtC(u.droids.nextPrice), catchup: fmtC(u.droids.catchUpCost)
-    }) + '</span></div>';
+    const at = u.droids.rows[0].level;
+    const args = { lvl: u.droids.breakEvenLevel, at: at, n: u.droids.count + 1, price: fmtC(u.droids.nextPrice), catchup: fmtC(u.droids.catchUpCost) };
+    html += recRow(at < u.droids.breakEvenLevel ? t('units.rec_droids', args) : t('units.rec_droids_buy', args));
   }
   if (u.droids.bestSkill && u.droids.rows.length) {
     const rows = u.droids.rows.filter(r => r.creditsPerPctYield !== null).sort((a, b) => a.creditsPerPctYield - b.creditsPerPctYield);
     const capped = u.droids.rows.filter(r => r.creditsPerPctYield === null);
-    html += '<div class="row"><span class="num">4</span><span>' + t('units.rec_skill_order', {
+    html += recRow(t('units.rec_skill_order', {
       list: rows.map((r, i) => (i === 0 ? '<b>' : '') + esc(skillLabel(r.skill)) + (i === 0 ? '</b>' : '') +
         ' (' + t('units.per_pct_yield', { c: fmtC(r.creditsPerPctYield) }) + ')').join(t('units.then_sep')),
       capped: capped.length
@@ -754,7 +763,7 @@ function renderUnits(u) {
           n: (u.droids.survival ? u.droids.survival.noModsCap : 100)
         })
         : t('units.rec_skill_uncapped')
-    }) + '</span></div>';
+    }));
   }
   html += '</div>';
 
@@ -825,7 +834,7 @@ const UNIT_GROUP_SKILLS = {
 const UNIT_GROUP_LABEL = { droids: 'droid', clones: 'clone' };
 // Group nouns come from the catalogue at call time (form '' = title-case
 // singular, 'lc' = lowercase singular, 'many' = plural); an unknown kind
-// still falls back to the raw kind, exactly as before.
+// falls back to the raw kind.
 function unitGroupWord(kind, form) {
   const w = UNIT_GROUP_LABEL[kind];
   return w ? t('units.group_' + w + (form ? '_' + form : '')) : kind;
@@ -1038,14 +1047,13 @@ function calcQcGap() {
   const gap = d.tech.maxOut.coresGap;
   const perDay = rate * 24 + daily;
   if (gap <= 0) { out.textContent = t('qc.done'); return; }
-  if (perDay <= 0) { out.textContent = t('qc.never'); return; }
+  if (perDay <= 0) { out.textContent = t('qc.no_rate'); return; }
   const days = gap / perDay;
   out.textContent = days >= 2 ? t('qc.dur_dh', { d: Math.floor(days), h: Math.round((days % 1) * 24) }) : Math.round(days * 24) + t('common.hours');
 }
 
 // NOTE: the parameter shadows the global t() helper, so this function reaches
-// the catalogue through I18n.t instead. Renaming the parameter would be a
-// refactor; this keeps the change to string externalisation only.
+// the catalogue through I18n.t instead.
 function renderTech(t) {
   let html = '';
   html += '<h2>' + I18n.t('tech.title') + '</h2>';
@@ -1102,6 +1110,11 @@ function renderTech(t) {
     } else {
       html += '<div class="row"><span>' + I18n.t('tech.plan_not_affordable', { name: esc(techBoostLabel(best.key)), n: best.cost }) + '</span></div>';
     }
+  } else if (t.battle) {
+    // The ranking skips skills at the 100 cap, so no rows = all four maxed.
+    html += '<div class="row"><span>' + I18n.t('tech.plan_all_maxed') + '</span></div>';
+  } else {
+    html += '<div class="row"><span>' + I18n.t('tech.plan_no_sim') + '</span></div>';
   }
 
   html += '<h2>' + I18n.t('tech.all_skills') + '</h2>';
@@ -1220,6 +1233,7 @@ function renderKorin(k) {
     ' ' + t('korin.fuel') + ' <span style="font-size:11px;color:var(--dim)">' + t('korin.fuel_multiplier', { x: k.fuelMultiplier.toFixed(1) }) + '</span>');
   html += card(t('korin.card_engine_cooldown'), '&minus;' + k.cooldownReductionPct + '%');
   html += '</div>';
+  if (k.equipped === false) html += '<div class="sub"><span class="badge b-warn">' + t('korin.unequipped') + '</span></div>';
   html += '<div class="sub">' + t('korin.next_level', { cost: fmtC(k.nextLevel.dustCostPerCapsule), mult: k.nextLevel.fuelMultiplier.toFixed(1) }) + '</div>';
   return html;
 }
@@ -1267,18 +1281,20 @@ function simPet() {
   const entries = Object.entries(p.resources || {});
   const short = cost > 0 ? entries.filter(function (e) { return e[1] < cost; }) : [];
 
-  // Pet food: every equipped pet auto-feeds from the same stock. The
-  // selected pet uses the simulated threshold, the others their current one.
+  // Pet food: every auto-fed equipped pet feeds from the same stock (without
+  // auto-feed food sits at the floor and nothing is consumed). The selected
+  // pet uses the simulated threshold, the others their current one.
   const cycleH = function (l) { return (100 - l) / 5 + 1; };
   let perDay = 0, count = 0;
   for (const q of p.pets) {
-    if (!q.equipped) continue;
+    if (!q.equipped || !q.autofeed) continue;
     count++;
     perDay += 24 / cycleH(q.id === pet.id ? limit : q.autofeedLimit);
   }
   const days = perDay > 0 ? p.petFood / perDay : Infinity;
 
   let html = '';
+  if (!pet.autofeed) html += '<div class="row"><span class="badge b-warn">' + t('sim.autofeed_off') + '</span></div>';
   html += '<div class="row"><span>' + t('sim.level_line', { name: esc(petBodyLabel(pet.name)), from: pet.level, to: pet.level + 1 }) + '</span>';
   html += '<span>' + t('sim.xp_now', { food: pet.food }) + ' <b>' + PetMath.petXpPerHour(pet.level, boost, pet.food, p.techSkill, p.premiumActive) + '</b></span>';
   html += '<span>' + t('sim.avg_food') + ' <b>' + ((100 + limit) / 2) + '%</b></span>';
@@ -1385,7 +1401,7 @@ function materialCols(showFarm) {
   ];
   if (showFarm) {
     cols.push({ label: t('mat.col_farm'), numeric: false, getValue: r => r.npc || '',
-      render: r => r.npc
+      render: r => r.npc && r.deficit > 0
         ? ('<span class="inv-stat">' + npcIcon(r.npc, 'mat-tile xs') + '<span>' + esc(npcLabel(r.npc)) + '</span>' +
            bodyIcon(r.location, 'mat-tile xs') + '<span>' + esc(bodyLabel(r.location)) + '</span></span>')
         : '-' });
@@ -1401,20 +1417,15 @@ function renderMaterials(m) {
   html += card(t('mat.card_blueprints_included'), m.totals.blueprintsIncluded);
   html += '</div>';
 
-  html += '<h2>' + t('mat.npc_drops_title') + '</h2>';
-  html += '<div class="sub">' + t('mat.npc_drops_note') + '</div>';
-  html += tableHtml('tbl-mat-npc', m.npcDrops, materialCols(true));
-
-  html += '<h2>' + t('mat.lab_title') + '</h2>';
-  html += '<div class="sub">' + t('mat.lab_note') + '</div>';
-  html += tableHtml('tbl-mat-lab', m.labMaterials, materialCols(false));
-
-  html += '<h2>' + t('mat.gathered_title') + '</h2>';
-  html += '<div class="sub">' + t('mat.gathered_note') + '</div>';
-  html += tableHtml('tbl-mat-gathered', m.gathered || [], materialCols(false));
-
-  html += '<h2>' + t('mat.other_title') + '</h2>';
-  html += tableHtml('tbl-mat-other', m.other, materialCols(false));
+  // A group with nothing in it gets no heading.
+  const section = function (id, list, title, note, farm) {
+    if (!list || !list.length) return '';
+    return '<h2>' + title + '</h2>' + (note ? '<div class="sub">' + note + '</div>' : '') + tableHtml(id, list, materialCols(farm));
+  };
+  html += section('tbl-mat-npc', m.npcDrops, t('mat.npc_drops_title'), t('mat.npc_drops_note'), true);
+  html += section('tbl-mat-lab', m.labMaterials, t('mat.lab_title'), t('mat.lab_note'), false);
+  html += section('tbl-mat-gathered', m.gathered, t('mat.gathered_title'), t('mat.gathered_note'), false);
+  html += section('tbl-mat-other', m.other, t('mat.other_title'), '', false);
 
   return html;
 }
@@ -1455,7 +1466,7 @@ function labShortfallCount(lab) {
   const plan = LM.planTarget(chain, demand, lab.stocks, capsuleOpts);
   return { plan, count: plan.raw.filter(r => r.coverage < 1).length };
 }
-function renderLab(lab) {
+function renderLab(lab, base) {
   if (!lab || !lab.available) {
     setTabCount('lab', 0, true);
     return '<div class="empty-note">' + t('lab.empty') + '</div>';
@@ -1468,11 +1479,14 @@ function renderLab(lab) {
   const demand = [{ product: 'warp capsule', units: capsules }];
   const { plan, count: shortfallCount } = labShortfallCount(lab);
   setTabCount('lab', shortfallCount, true);
-  const afterStocks = LM.stocksAfterBundle(lab.stocks, lab.foundingBundle);
-  const after = LM.planCore(chain, demand, afterStocks, capsuleOpts);
-  const founding = lab.targets.baseFounding;
+  // Founding readiness only while there is a base left to found: the server
+  // drops the bundle and the founding target once the base is live, and the
+  // base block's phase is the same fact seen from the other side.
+  const founded = !!lab.founded || !!(base && base.phase === 'live');
+  const founding = !founded && Array.isArray(lab.foundingBundle) && lab.foundingBundle.length && lab.targets ? lab.targets.baseFounding : null;
+  const after = founding ? LM.planCore(chain, demand, LM.stocksAfterBundle(lab.stocks, lab.foundingBundle), capsuleOpts) : null;
 
-  let html = '<div class="sub">' + t('lab.intro') + '</div>';
+  let html = '<div class="sub">' + t('lab.intro') + (founding ? ' ' + t('lab.intro_two_targets') : '') + '</div>';
 
   // --- cards ---
   html += '<div class="cards">';
@@ -1515,7 +1529,8 @@ function renderLab(lab) {
         esc(materialLabel(i.name)) + ' ' + fmtC(i.needed) + '<span class="dimtext"> / ' + fmtC(i.stock) + '</span></span>').join(' &middot; ') },
   ]);
 
-  // --- raw currencies ---
+  // --- raw currencies (only when the chain has some it cannot produce) ---
+  if (plan.raw.length) {
   html += '<h2>' + t('lab.raw_resources') + '</h2>';
   html += tableHtml('tbl-lab-raw', plan.raw, [
     { label: t('lab.col_resource'), numeric: false, getValue: r => r.name,
@@ -1525,6 +1540,7 @@ function renderLab(lab) {
     { label: t('lab.col_coverage'), numeric: true, getValue: r => r.coverage, render: r => covBar(r.coverage) + (r.coverage * 100).toFixed(0) + '%' },
     { label: t('lab.col_capsules_supported'), numeric: true, getValue: r => r.unitsSupported, render: r => String(r.unitsSupported) },
   ]);
+  }
 
   // --- upgrade ROI ---
   html += '<h2>' + t('lab.h_upgrade_roi') + '</h2><div class="sub">' + t('lab.upgrade_roi_note') + '</div><div class="list">';
@@ -1572,7 +1588,11 @@ function renderLab(lab) {
   // --- production emulator ---
   html += labEmuSection(lab);
 
-  // --- base founding ---
+  // --- base-tier buildings ---
+  html += labBaseTierHtml(lab, base);
+
+  // --- base founding (unfounded base only) ---
+  if (!founding) return html;
   html += '<h2>' + t('lab.h_base_founding') + '</h2><div class="cards">';
   const bundleRows = lab.foundingBundle.map(b => ({ name: b.product, need: b.units, have: lab.stocks[b.product] || 0 }));
   const shortRows = bundleRows.filter(b => b.have < b.need);
@@ -1583,6 +1603,54 @@ function renderLab(lab) {
   if (shortRows.length) {
     html += '<div class="list">' + shortRows.map(b => '<div class="row">' + matIcon(b.name) + '<span><b>' + esc(materialLabel(b.name)) + '</b> ' + fmtC(b.have) + ' / ' + fmtC(b.need) + '</span></div>').join('') + '</div>';
   }
+  return html;
+}
+
+// The five base-tier buildings (Aeroforge ... Rare Material Facility): what
+// each makes from what, whether it is bought, its timer at the live level,
+// and how many units the raw stock pays for right now. They are also in the
+// chain, so the emulator above can time any of their products. When the base
+// planner has a stockpile (what the base's module targets need of each
+// material), a "Base needs" column shows it against the product stock.
+function labBaseTierHtml(lab, base) {
+  const bt = lab.baseTier;
+  if (!bt || !bt.rows || !bt.rows.length) return '';
+  let html = '<h2>' + t('lab.h_base_tier') + '</h2>';
+  const locked = bt.rows.filter(r => r.status === 'locked');
+  const allBought = bt.rows.every(r => r.bought || r.status === 'locked');
+  const needs = {};
+  for (const s of (base && base.plan && Array.isArray(base.plan.stockpile)) ? base.plan.stockpile : []) if (s && s.material) needs[s.material] = s;
+  const hasNeeds = Object.keys(needs).length > 0;
+  html += '<div class="sub">' + t(allBought ? 'lab.base_tier_note_bought' : 'lab.base_tier_note') +
+    (!bt.panelOpened ? ' ' + t('lab.base_tier_panel_hint')
+      : (bt.nextBase ? ' ' + t('lab.base_tier_next_cost', { name: esc(moduleLabel(bt.nextBase)), cost: fmtC(bt.nextBaseCost) }) : '')) +
+    (locked.length ? ' ' + t('lab.base_tier_locked_note', { names: locked.map(r => esc(moduleLabel(r.building))).join(', ') }) : '') + '</div>';
+  const needCol = hasNeeds ? [{ label: t('lab.col_base_needs'), numeric: true, getValue: r => needs[r.product] ? needs[r.product].needed || 0 : -1,
+    render: r => {
+      const s = needs[r.product];
+      if (!s) return '-';
+      const short = Math.max(0, Number(s.short) || 0);
+      return fmtN(s.needed || 0) + (short > 0 ? ' <span style="color:var(--bad)">' + t('lab.base_needs_short', { n: fmtN(short) }) + '</span>' : ' <span style="color:var(--good)">' + t('lab.ready') + '</span>');
+    } }] : [];
+  html += tableHtml('tbl-lab-base-tier', bt.rows, [
+    { label: t('lab.col_building'), numeric: false, getValue: r => r.building, render: r => '<b>' + esc(moduleLabel(r.building)) + '</b>' },
+    { label: t('lab.col_product'), numeric: false, getValue: r => r.product, render: r => '<span class="inv-stat">' + matIcon(r.product) + esc(materialLabel(r.product)) + '</span>' },
+    { label: t('lab.col_status'), numeric: false, getValue: r => r.status || (r.bought ? 'bought' : 'unknown'), render: r => {
+      const s = r.status || (r.bought ? 'bought' : 'unknown');
+      if (s === 'bought') return '<span style="color:var(--good)">' + t('lab.bought') + '</span>';
+      if (s === 'next') return '<span style="color:var(--warn)">' + t('lab.status_next', { cost: fmtC(bt.nextBaseCost) }) + '</span>';
+      if (s === 'locked') return '<span style="color:var(--dim)">' + t('lab.status_locked') + '</span>';
+      return '<span style="color:var(--warn)">' + t('lab.not_bought') + '</span>';
+    } },
+    { label: t('common.level'), numeric: true, getValue: r => r.level === null ? -1 : r.level, render: r => r.level === null ? '-' : String(r.level) },
+    { label: t('lab.col_timer'), numeric: true, getValue: r => r.timerNow === null ? -1 : r.timerNow, render: r => r.timerNow === null ? '-' : t('lab.timer_value', { s: r.timerNow.toFixed(1), lvl: r.level }) },
+    { label: t('lab.col_per_unit'), numeric: false, getValue: r => r.perUnit === null ? -1 : r.perUnit,
+      render: r => (r.perUnit === null ? '<span class="dimtext">' + t('lab.per_unit_unknown') + '</span> ' : fmtC(r.perUnit) + ' &times; ') +
+        r.inputs.map(n => '<span style="white-space:nowrap;' + (r.perUnit !== null && (lab.stocks[n] || 0) < r.perUnit ? 'color:var(--bad)' : '') + '">' + esc(materialLabel(n)) + '<span class="dimtext"> ' + fmtC(lab.stocks[n] || 0) + '</span></span>').join(', ') },
+    { label: t('lab.col_units_hour'), numeric: true, getValue: r => r.unitsPerHour === null ? -1 : r.unitsPerHour, render: r => r.unitsPerHour === null ? '-' : r.unitsPerHour.toFixed(0) },
+    { label: t('lab.col_units_from_stock'), numeric: true, getValue: r => r.unitsFromStock === null ? -1 : r.unitsFromStock, render: r => r.unitsFromStock === null ? '-' : fmtN(r.unitsFromStock) },
+    { label: t('lab.col_product_stock'), numeric: true, getValue: r => r.stock, render: r => fmtN(r.stock) },
+  ].concat(needCol));
   return html;
 }
 
@@ -1849,35 +1917,18 @@ function setBaseLevel(name, v) {
   try { localStorage.setItem('advisor-base-levels', JSON.stringify(levels)); } catch (e) {}
   if (window.lastData) render(window.lastData);
 }
-// validOptions, when given, restricts the stored star to one the selector
-// actually offers (current system + bookmarks) so the dropdown and the
-// rate always agree; a stale/unknown stored value falls back to `fallback`.
-function baseStar(fallback, validOptions) {
-  try {
-    const v = localStorage.getItem('advisor-base-star');
-    if (v && (!validOptions || validOptions.indexOf(v) !== -1)) return v;
-  } catch (e) {}
-  return fallback;
-}
-function setBaseStar(v) {
-  try { localStorage.setItem('advisor-base-star', v); } catch (e) {}
-  if (window.lastData) render(window.lastData);
-}
 function fmtDays(d) {
   if (d === null || d === undefined || !isFinite(d)) return '?';
   if (d < 1) return t('base.time_h', { n: Math.round(d * 24) });
   return t('base.time_d', { n: d.toFixed(1) });
 }
 // Recompute the plan client-side from the payload input with the stored
-// level boxes and star selector applied.
+// level boxes applied.
 function basePlanFor(b) {
   const BM = window.BaseMath;
   const levels = Object.assign({}, b.input.levels || {}, baseLevels());
-  const starOptions = [b.location.current].concat(b.location.bookmarks).filter(s => s.star).map(s => s.star);
-  const starName = baseStar(b.input.starName, starOptions);
-  const rate = (BM.STAR_BONUSES[starName] || { rate: b.input.starRate || 0 }).rate;
-  const input = Object.assign({}, b.input, { levels, starName, starRate: rate });
-  return { plan: BM.planBase(input), starName, rate, levels };
+  const input = Object.assign({}, b.input, { levels });
+  return { plan: BM.planBase(input), levels };
 }
 function baseShortfallCount(b) {
   if (!b || !b.plan) return 0;
@@ -1886,33 +1937,30 @@ function baseShortfallCount(b) {
 function renderBase(b) {
   if (!b) return '<div class="empty-note">' + t('base.empty') + '</div>';
   const BM = window.BaseMath;
-  const { plan, starName, rate } = basePlanFor(b);
+  const { plan } = basePlanFor(b);
   setTabCount('base', plan.stockpile.filter(s => s.short > 0).length, true);
   let html = '';
-  html += '<div class="sub">' + t('base.formulas_from', { bundle: esc(b.provenance.bundle), patch: esc(String(b.provenance.live || b.provenance.client)) }) +
-    (b.provenance.drift ? ' <span class="drift">' + t('base.drift', { bundle: esc(String(b.provenance.liveBundle)) }) + '</span>' : '') +
+  // The bundle the formulas were read from is only worth showing when the game has moved past it.
+  html += '<div class="sub">' + (b.provenance.drift ? '<span class="drift">' + t('base.drift', { bundle: esc(String(b.provenance.liveBundle)), from: esc(String(b.provenance.bundle)) }) + '</span> ' : '') +
     t('base.income_note') + '</div>';
 
   // --- cards ---
   html += '<div class="cards">';
   html += card(t('base.card_phase'), b.phase === 'live' ? '<span style="color:var(--good)">' + t('base.phase_live') + '</span>' : t('base.phase_pre'));
-  const readyCount = b.founding.bundle.filter(x => x.have >= x.units).length;
-  html += card(t('base.card_founding_materials'), (readyCount === b.founding.bundle.length ? '<span style="color:var(--good)">' : '<span style="color:var(--warn)">') + readyCount + ' / ' + b.founding.bundle.length + '</span>');
-  const stars = [b.location.current].concat(b.location.bookmarks).filter(s => s.star);
-  const seen = {}; const options = [];
-  for (const s of stars) { if (seen[s.star]) continue; seen[s.star] = true; options.push(s); }
-  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_star')), '<select class="pet-input" onchange="setBaseStar(this.value)">' +
-    options.map(s => '<option value="' + esc(s.star) + '"' + (s.star === starName ? ' selected' : '') + '>' + esc(s.star) + t('base.star_option_rate', { n: s.rate }) + (s.name ? ' &middot; ' + esc(s.name) : '') + (s.coords ? ' ' + fmtCoords(s.coords) : '') + '</option>').join('') +
-    '</select>' + (b.location.best && b.location.best.rate > rate ? '<span class="est">' + t('base.best_known', { star: esc(b.location.best.star), rate: b.location.best.rate }) + (b.location.best.name ? t('base.best_known_at', { name: esc(b.location.best.name) }) : '') + '</span>' : ''));
-  // Two formulas disagree by the star rate; show the range rather than pick a
-  // side the client cannot settle. See ESTIMATES in public/base-math.js.
+  // Founding readiness only matters before the base exists.
+  if (b.phase !== 'live' && b.founding) {
+    const readyCount = b.founding.bundle.filter(x => x.have >= x.units).length;
+    html += card(t('base.card_founding_materials'), (readyCount === b.founding.bundle.length ? '<span style="color:var(--good)">' : '<span style="color:var(--warn)">') + readyCount + ' / ' + b.founding.bundle.length + '</span>');
+  }
+  if (b.live && b.live.bodyType) {
+    // Founded: the site is fixed, show the body and the XP it grants.
+    html += card(t('base.card_body'), esc(b.live.bodyType) + (b.live.bodyActivity ? ' &rarr; +10% ' + esc(itemSkillLabel(b.live.bodyActivity)) : ''));
+  }
+  // The game's own drop rate: 1 + boost/100 per drop, one drop every 5 h.
   html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_day')),
     plan.stellariumPerDay.toFixed(1) +
-    (plan.stellariumPerDayClient && plan.stellariumPerDayClient < plan.stellariumPerDay
-      ? ' <span style="color:var(--warn)">&ndash; ' + plan.stellariumPerDayClient.toFixed(1) + '?</span>' : '') +
-    '<span class="est">' + t('base.stellarium_est', { days: fmtDays(plan.daysToAllUnlocks) }) +
-    (plan.daysToAllUnlocksClient && plan.daysToAllUnlocksClient > plan.daysToAllUnlocks
-      ? ' &ndash; ' + fmtDays(plan.daysToAllUnlocksClient) : '') +
+    '<span class="est">' + t('base.drop_rate_chip', { n: plan.dropRate.guaranteed, p: plan.dropRate.chance }) +
+    t('base.stellarium_est', { days: fmtDays(plan.daysToAllUnlocks) }) +
     t('base.stellarium_left', { n: plan.totalStellariumLeft }) + '</span>');
   const up = plan.upkeep;
   const inc = b.income || null;
@@ -1940,8 +1988,7 @@ function renderBase(b) {
   html += card(t('base.card_upkeep_targets'), fmtC(up.perDay) + basis(up, false));
   html += '</div>';
   if (inc) {
-    const wallet = window.lastData && window.lastData.units ? window.lastData.units.credits : 0;
-    let note = t('base.upkeep_basis', { counter: fmtC(inc.lifetimeCredits), wallet: fmtC(wallet) });
+    let note = t('base.upkeep_basis', { counter: fmtC(inc.lifetimeCredits), days: (inc.accountDays || 0).toFixed(1), basis: fmtC(inc.avgDaily) });
     if (inc.recent) {
       note += t('base.observed_since', {
         when: esc(new Date(inc.recent.since).toLocaleString()),
@@ -1954,17 +2001,10 @@ function renderBase(b) {
     }
     html += '<div class="sub">' + note + '</div>';
   }
-  if (plan.stellariumPerDayClient && plan.stellariumPerDayClient < plan.stellariumPerDay) {
-    html += '<div class="sub">' + t('base.contested', {
-      advisor: plan.stellariumPerDay.toFixed(1),
-      client: plan.stellariumPerDayClient.toFixed(1),
-      days: fmtDays(plan.daysToAllUnlocks),
-      daysClient: fmtDays(plan.daysToAllUnlocksClient),
-    }) + '</div>';
-  }
   if (up.questsKnown === false) html += '<div class="sub">' + t('base.quests_hint') + '</div>';
   if (b.labPanelHint) html += '<div class="sub">' + t('base.lab_panel_hint') + '</div>';
-  if (b.location.bodies.length) html += '<div class="sub">' + t('base.body_xp', { list: b.location.bodies.map(x =>
+  // Which body to found on: moot once the base sits on one.
+  if (!b.live && b.location.bodies.length) html += '<div class="sub">' + t('base.body_xp', { list: b.location.bodies.map(x =>
     bodyIcon(x.type, 'mat-tile xs') + esc(bodyLabel(x.type)) + (x.activity ? ' &rarr; ' + esc(itemSkillLabel(x.activity)) : '')).join(', ') }) + '</div>';
   html += baseSystemsHtml(b);
   html += baseStellariumHtml(b);
@@ -1972,8 +2012,17 @@ function renderBase(b) {
   // --- live block ---
   if (b.live) {
     html += '<h2>' + t('base.h_base', { name: esc(b.live.name) }) + '</h2><div class="cards">';
-    html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_held')), String(b.live.stellarium));
-    if (b.live.nextUnlock) html += card(t('base.card_next_unlock'), esc(moduleLabel(b.live.nextUnlock.name)) + '<span class="est">' + t('base.next_unlock_note', { cost: b.live.nextUnlock.cost, eta: b.live.nextUnlock.etaDays === 0 ? t('base.affordable_now') : t('base.eta_in', { days: fmtDays(b.live.nextUnlock.etaDays) }) }) + '</span>');
+    if (b.live.nextUnlock) {
+      // ETA counts guaranteed drops from the next tick (computed here so a
+      // snapshot from before the tick timestamp was recorded still gets it);
+      // the daily-rate estimate is the fallback without a tick timestamp.
+      const nu = b.live.nextUnlock;
+      const { drops, etaTick } = BM.unlockEta(nu.cost, b.live.stellarium, b.stellarium ? b.stellarium.minerBoost : 0, b.live.nextStellariumTick);
+      const eta = drops === 0 ? t('base.affordable_now')
+        : etaTick ? t(drops === 1 ? 'base.eta_next_drop' : 'base.eta_drops', { n: drops, time: fmtTick(etaTick) })
+        : t('base.eta_in', { days: fmtDays(nu.etaDays) });
+      html += card(t('base.card_next_unlock'), esc(moduleLabel(nu.name)) + '<span class="est">' + t('base.next_unlock_note', { cost: nu.cost, eta }) + '</span>');
+    }
     html += '</div>';
     html += tableHtml('tbl-base-live', b.live.modules.filter(m => m.unlocked), [
       { label: t('base.col_module'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(moduleLabel(r.name)) + '</b>' + (r.active ? '' : ' <span style="color:var(--bad)">' + t('base.off') + '</span>') },
@@ -1988,21 +2037,24 @@ function renderBase(b) {
 
   // --- modules / targets ---
   html += '<h2>' + t('base.h_modules') + '</h2><div class="sub">' + t('base.modules_note') + '</div>';
-  const rows = plan.unlocks.map(u => Object.assign({}, u, plan.targets.find(t => t.name === u.name) || {}));
+  const rows = plan.unlocks.map(u => Object.assign({}, BM.MODULES.find(m => m.name === u.name) || {}, u, plan.targets.find(t => t.name === u.name) || {}));
+  // A row without a target (founded: a locked module with no level set) has no cost to show.
+  const targeted = r => r.to !== undefined;
   html += tableHtml('tbl-base-modules', rows, [
     { label: t('base.col_module'), numeric: false, getValue: r => r.name, render: r => '<b>' + esc(moduleLabel(r.name)) + '</b>' + (r.unlocked ? ' <span style="color:var(--good)">' + t('base.unlocked') + '</span>' : '') },
     { label: t('base.col_type'), numeric: false, getValue: r => r.type || '', render: r => esc(moduleTypeLabel(r.type || '')) },
     { label: t('base.col_unlock'), numeric: true, getValue: r => r.cost, render: r => r.unlocked ? '-' : r.cost + '<span class="est">' + t('base.unlock_est', { cum: r.cumulative, days: fmtDays(r.daysToUnlock) }) + '</span>' },
     { label: t('base.col_materials'), numeric: false, getValue: r => (r.materials || []).join(','), render: r => (r.materials || []).map(m => esc(materialLabel(m))).join(', ') },
     { label: t('base.col_target_level'), numeric: true, getValue: r => r.to || 0, render: r => '<input class="pet-input base-input" type="number" min="0" value="' + (r.to || 0) + '" onchange="setBaseLevel(' + esc(jsStr(r.name)) + ', this.value)">' + (r.from ? '<span class="est">' + t('base.from_level', { n: r.from }) + '</span>' : '') },
-    { label: t('base.col_cost_to_target'), numeric: true, getValue: r => r.perMaterial || 0, render: r => fmtN(r.perMaterial || 0) + t('base.of_each') },
-    { label: t('base.col_boost_at_target'), numeric: true, getValue: r => r.boostAtTarget || 0, render: r => (r.boostAtTarget || 0).toFixed(0) + '%' },
+    { label: t('base.col_cost_to_target'), numeric: true, getValue: r => r.perMaterial || 0, render: r => targeted(r) ? fmtN(r.perMaterial || 0) + t('base.of_each') : '-' },
+    { label: t('base.col_boost_at_target'), numeric: true, getValue: r => r.boostAtTarget || 0, render: r => targeted(r) ? (r.boostAtTarget || 0).toFixed(0) + '%' : '-' },
     { label: t('base.col_output_at_target'), numeric: true, getValue: r => r.outputAtTarget || 0, render: r => (r.outputAtTarget === undefined ? '-' : r.outputAtTarget.toFixed(2)) },
     { label: t('base.col_upkeep_at_target'), numeric: true, getValue: r => r.upkeepPerHourAtTarget || 0, render: r => (r.type === 'active' || (b.live && !r.unlocked)) ? '-' : fmtC(r.upkeepPerHourAtTarget || 0) },
   ]);
 
   // --- stockpile ---
   html += '<h2>' + t('base.h_stockpile') + '</h2>';
+  if (!plan.stockpile.length) return html + '<div class="sub">' + t('base.stockpile_none') + '</div>';
   html += '<div class="sub">' + t('base.stockpile_note') + '</div>';
   if (plan.buyFirst.length) html += '<div class="sub" style="color:var(--warn)">' + t('base.buy_first', { list: plan.buyFirst.map(n => esc(moduleLabel(n))).join(', ') }) + '</div>';
   html += tableHtml('tbl-base-stock', plan.stockpile, [
@@ -2062,7 +2114,7 @@ function baseSystemsHtml(b) {
     { label: t('base.col_system'), numeric: false, getValue: r => r.name || '', render: r => '<b>' + esc(r.name || '?') + '</b>' +
       (r.isCurrent ? ' <span style="color:var(--good)">' + t('base.here') + '</span>' : '') +
       (r.isStarter ? ' <span style="color:var(--dim)">' + t('base.starter') + '</span>' : '') },
-    { label: t('base.col_star'), numeric: false, getValue: r => r.star || '', render: r => esc(r.star || '?') + (r.rate ? '<span class="est">' + t('base.star_option_rate', { n: r.rate }) + '</span>' : '') },
+    { label: t('base.col_star'), numeric: false, getValue: r => r.star || '', render: r => esc(r.star || '?') },
     { label: t('base.col_coords'), numeric: false, getValue: r => r.coords ? r.coords.x : '', render: r => r.coords ? fmtCoords(r.coords) : '<span style="color:var(--dim)">' + t('base.coords_unknown') + '</span>' },
     { label: t('base.col_from_here'), numeric: true, getValue: r => r.fromCurrent === null ? -1 : r.fromCurrent, render: r => fmtLy(r.fromCurrent) },
     { label: t('base.col_nearest_starter'), numeric: true, getValue: r => r.starterDistance === null ? -1 : r.starterDistance,
@@ -2074,7 +2126,6 @@ function baseSystemsHtml(b) {
 function baseStellariumHtml(b) {
   const st = b.stellarium;
   if (!st) return '';
-  const range = (a, c, digits) => a.toFixed(digits) + (c && c < a ? ' <span style="color:var(--warn)">&ndash; ' + c.toFixed(digits) + '?</span>' : '');
   let html = '<h2>' + t('base.h_stellarium') + '</h2>';
   html += '<div class="sub">' + t('base.stellarium_rules', { hours: st.tickHours, ticks: st.ticksPerDay.toFixed(1) }) + '</div>';
   html += '<div class="cards">';
@@ -2082,9 +2133,16 @@ function baseStellariumHtml(b) {
     html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_held')), String(st.held));
     html += card(t('base.card_next_tick'), fmtTick(st.nextTick));
   }
-  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_per_tick')), range(st.perTick, st.perTickClient, 2) +
-    '<span class="est">' + t('base.per_tick_note', { rate: st.starRate, boost: st.minerBoost.toFixed(0) }) + '</span>');
-  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_day')), range(st.perDay, st.perDayClient, 1));
+  // A snapshot saved before the drop-rate chip existed has no dropRate;
+  // /api/last serves such a snapshot until the next analyze, so derive it.
+  const drop = st.dropRate || window.BaseMath.ESTIMATES.dropRate(st.minerBoost || 0);
+  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_per_tick')), drop.guaranteed + ' + ' + drop.chance + '%' +
+    '<span class="est">' + t('base.per_tick_note', { exp: st.perTick.toFixed(2), boost: st.minerBoost.toFixed(0) }) + '</span>');
+  html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_stellarium_day')), st.perDay.toFixed(1));
+  if (st.observed) {
+    html += card(cardIcon(resIcon('stellarium', 'mat-tile xs'), t('base.card_observed_drop')), fmtN(st.observed.last) +
+      '<span class="est">' + t('base.observed_drop_note', { count: st.observed.count, mean: st.observed.mean.toFixed(2) }) + '</span>');
+  }
   html += card(t('base.card_unlocked'), st.unlockedCount + ' / ' + (st.unlockedCount + st.lockedModules.length) +
     '<span class="est">' + t('base.unlock_left_note', { n: st.totalLeft }) + '</span>');
   html += '</div>';
@@ -2092,14 +2150,6 @@ function baseStellariumHtml(b) {
   html += '<div class="sub">' + t('base.unlock_curve_note') + '</div>';
   html += '<div class="sub">' + st.unlockCurve.map(u => t('base.unlock_curve_item', { n: u.unlocked, cost: u.cost })).join(' &middot; ') + '</div>';
   html += '<div class="sub">' + t('base.tier_curve_note') + ' ' + st.tierCurve.map(x => t('base.tier_curve_item', { tier: x.tier, cost: x.cost })).join(' &middot; ') + '</div>';
-
-  html += '<div class="sub" style="margin-top:6px">' + t('base.star_table_note') + '</div>';
-  html += tableHtml('tbl-base-stars', st.stars.map(s => Object.assign({ chosen: s.name === b.input.starName }, s)), [
-    { label: t('base.col_star'), numeric: false, getValue: r => r.name, render: r => (r.chosen ? '<b>' : '') + esc(r.name) + (r.chosen ? '</b> <span style="color:var(--good)">' + t('base.chosen') + '</span>' : '') + (r.rare ? ' <span style="color:var(--dim)">' + t('base.rare_star') + '</span>' : '') },
-    { label: t('base.col_star_rate'), numeric: true, getValue: r => r.rate, render: r => String(r.rate) },
-    { label: t('base.col_star_efficiency'), numeric: true, getValue: r => r.efficiency, render: r => r.efficiency + '%' },
-    { label: t('base.col_star_day'), numeric: true, getValue: r => r.rate * st.ticksPerDay, render: r => (r.rate * (1 + st.minerBoost / 100) * st.ticksPerDay).toFixed(1) },
-  ]);
   return html;
 }
 
@@ -2179,7 +2229,8 @@ function renderVoyager(v) {
   html += card(t('voy.card_travel'), fmtDur(st.travelSec) +
     voySub(t('voy.travel_detail', { bought: c.timer, max: v.caps.maxTimerUpgrade })));
   html += card(t('voy.card_jumps'), st.jumps +
-    voySub(t('voy.jumps_detail', { base: c.max_jumps, cap: v.caps.maxJumps, bonus: st.jumpsBonus })));
+    voySub(st.jumpsBonus > 0 ? t('voy.jumps_detail', { base: c.max_jumps, cap: v.caps.maxJumps, bonus: st.jumpsBonus })
+      : t('voy.jumps_detail_nobonus', { base: c.max_jumps, cap: v.caps.maxJumps })));
   html += card(cardIcon(resIcon('fuel', 'mat-tile xs'), t('voy.card_tank')), fmtC(c.max_fuel) +
     voySub(t('voy.tank_detail', { cur: fmtC(c.current_fuel) })));
   html += card(t('voy.card_reward'), '+' + c.reward_bonus + '%' +
@@ -2223,7 +2274,8 @@ function voyEmuHtml() {
       render: r => r.next === null ? '<span style="color:var(--dim)">' + t('voy.maxed') + '</span>'
         : '<span class="inv-stat">' + resIcon(VOY_CURRENCY_ICON[r.currency], 'mat-tile xs') + fmtC(r.next) + '</span>' },
     { label: t('voy.col_max_affordable'), numeric: true, getValue: r => r.max,
-      render: r => r.next === null ? '-' : fmtC(r.max) + ' <button class="ghost" style="padding:1px 6px;font-size:11px" onclick="maxVoyPlan(' + jsStr(r.key) + ')">' + t('voy.max_btn') + '</button>' },
+      render: r => r.next === null ? '-' : r.max === 0 ? '<span style="color:var(--dim)">' + t('common.none') + '</span>'
+        : fmtC(r.max) + ' <button class="ghost" style="padding:1px 6px;font-size:11px" onclick="maxVoyPlan(' + jsStr(r.key) + ')">' + t('voy.max_btn') + '</button>' },
     { label: t('voy.col_plan'), numeric: true, getValue: r => r.plan,
       render: r => r.next === null ? '-' : '<input class="pet-input base-input" type="number" min="0" step="1" value="' + r.plan +
         '" onchange="setVoyPlan(' + jsStr(r.key) + ', this.value)">' },
@@ -2324,9 +2376,21 @@ function render(d) {
         '<div class="card"><div class="k">' + cardIcon(npcIcon(npc, 'mat-tile xs'), esc(npcLabel(npc))) +
         '</div><div class="v">' + lvl + '</div></div>').join('') + '</div>';
     }
+    // The over-cap rows behind the tab badge.
+    if (d.warnings && d.warnings.length) {
+      html += '<h2>' + t('view.over_cap_title', {n: d.warnings.length}) + '</h2><div class="list warnlist">';
+      for (const w of d.warnings) {
+        html += '<div class="row">' + actIcon(w.ctx, 'mat-tile xs') + '<b>' + esc(actLabel(w.ctx)) + '</b> ' +
+          t('view.over_cap_row', {stat: esc(statLabel(w.stat).replaceAll('_', ' ')), total: esc(w.totalText), cap: esc(w.capText)}) +
+          ' <span style="color:var(--bad)">' + t('gear.wasted', {v: esc(w.wastedText)}) + '</span></div>';
+      }
+      html += '</div>';
+    }
     html += '<h2>' + t('view.active_bonuses') + '</h2>';
     html += '<div class="sub">' + t('view.active_bonuses_sub') + '</div>';
-    html += renderContextTotals(d.contextTotals);
+    // Base upkeep reduction only does something once a base is founded.
+    const baseLive = !!(d.base && d.base.phase === 'live');
+    html += renderContextTotals(d.contextTotals, baseLive ? null : new Set(['base_upkeep_reduction']));
     html += renderOverrideLosses(d.overrideLosses);
   } else if (tab === 'installs') {
     const labels = {
@@ -2342,7 +2406,8 @@ function render(d) {
     const planList = variant === 'full' ? d.installs
       : d.installsResources;
     const prevInstallKeys = computeInstallKeySet(window.prevData, variant);
-    html += renderInstalls(planList, d.freedTexts, d.battleNote, d.gear, variant, doneSet, prevInstallKeys);
+    const freedList = variant === 'full' ? d.freedTexts : (d.freedTextsResources || d.freedTexts);
+    html += renderInstalls(planList, freedList, d.battleNote, d.gear, variant, doneSet, prevInstallKeys);
   } else if (tab === 'merges') {
     html += '<h2>' + t('view.merge_plan') + '</h2>';
     html += '<div class="toolbar" style="margin-bottom:6px"><button class="ghost" onclick="resetDone()">' + t('view.reset_checkmarks') + '</button></div>';
@@ -2361,7 +2426,7 @@ function render(d) {
   } else if (tab === 'materials') {
     html += '<h2>' + t('tab.materials') + '</h2>' + renderMaterials(d.materials);
   } else if (tab === 'lab') {
-    html += '<h2>' + t('view.lab_planner') + '</h2>' + renderLab(d.lab);
+    html += '<h2>' + t('view.lab_planner') + '</h2>' + renderLab(d.lab, d.base);
   } else if (tab === 'base') {
     html += '<h2>' + t('view.base_planner') + '</h2>' + renderBase(d.base);
   } else if (tab === 'voyager') {

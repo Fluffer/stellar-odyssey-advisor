@@ -65,6 +65,15 @@ describe("planPets: korin", () => {
     assert.equal(korin.nextLevel.fuelMultiplier, 1 + 14 * 0.20);
   });
 
+  test("equipped reflects whether Korin sits in a slot", () => {
+    const korinPet = { _id: "k", name: "Korin", pet_type: "generator", level: 5, current_xp: 0, food: 100 };
+    const base = { commonResources: {}, materials: [], voyager: null, dust: 0 };
+    const out = planPets({ ...base, pets: { pets: [korinPet], petSlots: [] } });
+    assert.equal(out.korin.equipped, false);
+    const inSlot = planPets({ ...base, pets: { pets: [korinPet], petSlots: [{ _id: "s", pet: "k", pet_type: "generator", autofeed: true, autofeed_limit: 50 }] } });
+    assert.equal(inSlot.korin.equipped, true);
+  });
+
   test("fuelPerEnhanced is null without a voyager max_fuel", () => {
     const state = {
       pets: { pets: [{ _id: "k", name: "Korin", pet_type: "generator", level: 5, current_xp: 0, food: 100 }], petSlots: [] },
@@ -72,6 +81,27 @@ describe("planPets: korin", () => {
     };
     const korin = planPets(state).korin;
     assert.equal(korin.fuelPerEnhanced, null);
+  });
+});
+
+describe("planPets: pet food burn", () => {
+  test("counts only auto-fed equipped pets", () => {
+    const pet = (id) => ({ _id: id, name: "Owl", pet_type: "booster", level: 7, current_xp: 0, xpboost: 0, food: 100 });
+    const state = {
+      pets: {
+        pets: [pet("a"), pet("b"), pet("c")],
+        petSlots: [
+          { _id: "s1", pet: "a", pet_type: "booster", autofeed: true, autofeed_limit: 50 },  // 24/11 per day
+          { _id: "s2", pet: "b", pet_type: "booster", autofeed: false },                     // floor, no burn
+          // "c" is unequipped: no burn
+        ],
+        petFood: 100,
+      },
+      commonResources: {},
+    };
+    const out = planPets(state);
+    assert.equal(out.petFoodPerDay, Math.round((24 / 11) * 10) / 10);
+    assert.equal(out.petFoodDays, Math.floor(100 / (24 / 11)));
   });
 });
 

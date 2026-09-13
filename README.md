@@ -2,35 +2,33 @@
 
 A read-only companion tool for the Steam game **Stellar Odyssey**. It reads the live game
 state and computes optimal catalyst installs, merge chains, droid/clone upgrade strategy,
-technology (skill) spending, and pet XP planning — including a battle simulator that
-validates every gear suggestion against your actual win rates.
+technology (skill) spending, pet XP planning, material deficits, and the laboratory, base
+and Voyager upgrade paths — including a battle simulator that validates every gear
+suggestion against your actual win rates.
 
 It never sends commands to the game. It only *reads* state through the game's debug
 interface, so it cannot spend, craft, equip or change anything on your account.
 
 ## Features
 
-- **Gear** — every equipped item with its catalyst groups per activity tab, effective
-  values (including the 50% "halved" penalty for a duplicate stat in the same group)
-- **Stats** — battle benchmark (the max NPC level you can beat at >= 98% win rate for all
-  8 NPC types) plus a per-activity bonus panel showing what is *actually* active during
-  each activity using the game's real activity-chain semantics (a non-empty activity
-  group replaces the item's default group for that activity; empty groups inherit,
-  voyager ← exploring ← default). On the laser and probes that chain means a Voyager
-  expedition reads their **exploring** group, which the game labels "Exploring & Voyager"
-  and the advisor now labels the same. Note that label covers the *profile*, not the dust:
-  a measured expedition paid exactly `owl × premium × raw` — an expedition gets neither
-  the Cosmic dust catalyst nor the exploring cosmic-dust skill, only its own reward bonus
-  and voyager tech skill. Each activity card lists only the stats that matter
-  there; every capped stat relevant to that activity is shown with current / cap — even
-  at zero investment — with an inline fill bar and the wasted amount when over the cap,
-  plus alerts for activity overrides that lose value vs what they replace
-- **Installs** — an install/replace plan for your unequipped catalysts in two variants
-  (full explore / full resources). Every battling suggestion is battle-simulated
-  first: if it would drop your win rate, it is filtered out. Includes reinstall guidance
-  when a catalyst should be pulled from another item, plus a what-if projection showing
-  the max NPC level you'd reach per NPC type if the whole full-explore plan were applied.
-  Every action on a capped stat shows that stat's total in the tab before → after / cap
+- **Gear** — every equipped item with its catalyst groups per activity tab and their
+  effective values (a duplicate stat in the same group counts 50%, shown as "halved")
+- **Stats** — the battle benchmark (the max NPC level you beat at >= 98% win rate, for
+  all 8 NPC types) and a per-activity bonus panel: what is active during each activity
+  under the game's activity-chain rules (a non-empty activity group replaces the item's
+  default group for that activity; empty groups inherit, voyager ← exploring ← default,
+  so a Voyager expedition reads the laser's and probes' "Exploring & Voyager" group).
+  An expedition's dust is its own reward bonus and the voyager tech skill only; the
+  Cosmic dust catalyst and the exploring cosmic-dust skill do not apply to it. Each
+  activity card lists the stats that matter there with current / cap, a fill bar and
+  the wasted amount when over the cap, plus alerts for activity overrides that lose
+  value against what they replace
+- **Installs** — an install/replace plan for the unequipped catalysts in two variants
+  (full explore / full resources). Every battling suggestion is battle-simulated first
+  and dropped if it would lower the win rate. Includes reinstall guidance when a catalyst
+  should move from another item, and a what-if projection of the max NPC level per NPC
+  type with the whole full-explore plan applied. Every action on a capped stat shows
+  that stat's tab total before → after / cap
 - **Inventory** — every unequipped catalyst in one sortable, filterable table (stat,
   rarity, range, activity, value), tagged with what it's already earmarked for (an
   install or a merge group) and, for the rest, a sell advisor that flags catalysts too
@@ -69,12 +67,13 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   how many units each building must run and for how long, the chain time both pipelined
   (claim and re-queue every 10 minutes) and sequential, which building level buys the
   most time per credit (1.15M × level, 0.1 s per level down to the 5 s floor), the best
-  affordable speed multiplier, and base-founding readiness (5,000 each of the five
-  intermediates) with the capsule chain time after founding; the target counts capsules
-  on top of what you already hold. A **production emulator** answers "how long does N of
-  this take, and what do upgrades do to that?": pick any product the chain makes and an
-  amount (on top of stock, optionally ignoring the intermediates you already hold), and
-  it shows the chain time as it stands next to the time with your changes. Per building
+  affordable speed multiplier and, while the base is not founded yet, founding readiness
+  (5,000 each of the five intermediates) with the capsule chain time after founding; the
+  target counts capsules on top of what you already hold. A **production emulator**
+  answers "how long does N of this take, and what do upgrades do to that?": pick any
+  product the chain makes and an amount (on top of stock, optionally ignoring the
+  intermediates you already hold), and it shows the chain time as it stands next to the
+  time with your changes. Per building
   you set a scenario level (bounded by the live level and the 5 s floor) and a speed
   multiplier (x2..x10, which costs resources, not credits); the page shows the timer and
   time before and after per building, which buildings are tied at the top (they must all
@@ -86,13 +85,14 @@ interface, so it cannot spend, craft, equip or change anything on your account.
 - **Base** — base-building planner. Known systems (current + bookmarks) with their
   coordinates, distance from here and distance to the nearest starter system (the uncapped
   part of a discovery's dust value); a Stellarium section with yield per tick and per day,
-  next tick, the unlock and tier cost curves, and every star type's rate. Before founding: founding readiness, which star to
-  found under (stellarium rate per star type), the unlock order with stellarium cost per
-  module and an estimated timeline, per-module target levels with the exact material cost
-  (charged from each of the module's materials), the stockpile list with shortfalls and lab
-  chain times, which base-tier lab buildings to buy first, and the upkeep bill at the
-  targets as a share of your average daily income. After founding: the live module table
-  with boost, output, next level and tier cost, and the next unlock's ETA
+  next tick, the unlock and tier cost curves, and every star type's rate. Before founding:
+  founding readiness, which star to found under (stellarium rate per star type), the
+  unlock order with stellarium cost per module and an estimated timeline, per-module
+  target levels with the exact material cost (charged from each of the module's
+  materials), the stockpile list with shortfalls and lab chain times, which base-tier lab
+  buildings to buy first, and the upkeep bill at the targets as a share of your average
+  daily income. After founding: the live module table with boost, output, next level and
+  tier cost, and the next unlock's ETA
 - **Item advisor** (Gear tab) — per-slot ship item analysis: how many levels behind the
   matching skill (battling/gathering/exploring) each item's craft-time level is and what
   recrafting now would cap its value at, weapon/shield NPC-weakness mod coverage, an engine
@@ -128,9 +128,9 @@ listening ports and identifies the game by asking each page whether it exposes t
 Pinia stores, so the changing port does not matter. Just start the game and run the
 advisor.
 
-Verified on the current Steam build: no Steam launch options set, no
-`--remote-debugging-port` on the game's command line, port open regardless (60465 on one
-run, different on the next).
+No Steam launch options are needed: the game's command line carries no
+`--remote-debugging-port`, and the port is open regardless, on a different number each
+run.
 
 If a future patch turns that off, `node diagnose-connection.js` will say so, and you can
 pin a port yourself: **Library → right-click Stellar Odyssey → Properties → General →
@@ -297,11 +297,11 @@ the bridge status as its first stage.
   and upkeep per hour), so the formula's output is an hourly charge — 24 a day, not one per
   10-minute worker run. Nothing in-game lowers it except the module efficiency boost, PvP
   base boost and catalyst upkeep reduction.
-- **`statistics.credits` is not everything you have earned.** On this account it reads
-  ~7.4B while the wallet holds ~12.6B, so it misses whole sources. Treat it as the game's
-  billing counter, nothing more. Affordability is therefore shown against the *observed*
-  rate — how fast credits actually grew across `snapshots/history.jsonl` — which needs at
-  least an hour between two analyses before it appears. The upkeep share of the billing
+- **`statistics.credits` is not everything you have earned.** It can sit far below the
+  wallet, so it misses whole sources. Treat it as the game's billing counter, nothing
+  more. Affordability is therefore shown against the *observed* rate — how fast credits
+  actually grew across `snapshots/history.jsonl` — which needs at least an hour between
+  two analyses before it appears. The upkeep share of the billing
   basis is deliberately **not** shown as a verdict: upkeep is linear in that basis, so the
   ratio cancels out and reads the same at any income.
 - **Daily quest coverage** shows as unknown until you open the daily quests panel in-game

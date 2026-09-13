@@ -12,8 +12,7 @@
 //
 // Wrapped in a function: in the browser every one of these files is a classic
 // <script> sharing ONE global scope, so a top-level `function levelCost` here
-// and another in a sibling file silently overwrite each other (lab-math's
-// 1.15M x level was replaced by base-math's module curve at call time).
+// and another in a sibling file silently overwrite each other.
 // Only window.UnitMath / module.exports leave this scope.
 (function () {
 const UNIT_STEP = 0.1;

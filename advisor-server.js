@@ -25,7 +25,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { Worker } = require("node:worker_threads");
-const { recentIncome } = require("./lib/income.js");
+const { recentIncome, observedStellariumDrops } = require("./lib/income.js");
 const { Bridge } = require("./lib/bridge.js");
 
 const PORT = Number(process.argv[2]) || 8787;
@@ -119,6 +119,9 @@ function historyMetrics(data) {
     // which is the spendable wallet and drops whenever the player buys
     // something. Only this one can yield an income rate. See recentIncome().
     lifetimeCredits: (data.base && data.base.income) ? (data.base.income.lifetimeCredits ?? null) : null,
+    // Stellarium HELD on the founded base, null before founding. A rise
+    // between two lines is a miner drop; see observedStellariumDrops().
+    stellarium: (data.base && data.base.live) ? (data.base.live.stellarium ?? null) : null,
     installedCount: p.installedCount ?? null,
     unequippedCount: p.unequippedCount ?? null,
     battleAvg,
@@ -164,6 +167,10 @@ async function attachRecentIncome(data) {
     lines = (await fs.promises.readFile(path.join(SNAP_DIR, "history.jsonl"), "utf8")).split("\n").filter(Boolean);
   } catch (_) { return; /* no history yet */ }
   data.base.income.recent = recentIncome(lines, Date.now(), Number(data.base.income.lifetimeCredits));
+  if (data.base.stellarium) {
+    const heldNow = data.base.live ? Number(data.base.live.stellarium) : NaN;
+    data.base.stellarium.observed = observedStellariumDrops(lines, Date.now(), heldNow);
+  }
 }
 
 async function saveSnapshot(data) {

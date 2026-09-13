@@ -261,6 +261,7 @@ function analyze(s) {
   const battleBase = validator ? validator.baseLevels : null;
 
   const freedTexts = fullPlan.freed.map(f => fmtCat(f));
+  const freedTextsResources = resourcesPlan.freed.map(f => fmtCat(f));
 
   // Per-tier merge requirements so the advice is transparent at any level.
   // tierThreshold(rIdx) = the minimum RESULT range a merge into rarity rIdx
@@ -342,7 +343,7 @@ function analyze(s) {
 
   return {
     player, gear, warnings, overrideLosses, contextTotals,
-    installs, installsResources, freedTexts,
+    installs, installsResources, freedTexts, freedTextsResources,
     mergePlans, mergeRequirements, battleNote, battleBase,
     // false => every battle figure in this analysis is missing the squadron
     // multiplier; treat them as unknown, not as a regression.

@@ -7,7 +7,7 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
-const { recentIncome } = require("../lib/income.js");
+const { recentIncome, observedStellariumDrops } = require("../lib/income.js");
 
 const DAY = 86400000;
 const at = (nowMs, daysAgo, lifetimeCredits, extra) =>
@@ -76,5 +76,39 @@ describe("recentIncome", () => {
     const r = recentIncome(lines, now, 1000e6);
     assert.ok(Math.abs(r.days - 2) < 1e-9);
     assert.equal(r.perDay, 100e6);
+  });
+});
+describe("observedStellariumDrops", () => {
+  const now = Date.UTC(2026, 8, 13, 12, 0, 0);
+  const H = 3600000;
+  const line = (hoursAgo, stellarium) => JSON.stringify({ capturedAt: new Date(now - hoursAgo * H).toISOString(), stellarium });
+
+  test("null before founding and while nothing has risen", () => {
+    assert.equal(observedStellariumDrops([], now, NaN), null);
+    assert.equal(observedStellariumDrops([line(6, null), line(3, 0)], now, 0), null);
+  });
+
+  test("each rise between consecutive readings is one drop; spends (falls) are ignored", () => {
+    // 0 -> 3 (drop), 3 -> 2 (spent one on an unlock), 2 -> 6 (drop of 4), now 6.
+    const lines = [line(12, 0), line(7, 3), line(6, 2), line(2, 6)];
+    const r = observedStellariumDrops(lines, now, 6);
+    assert.equal(r.count, 2);
+    assert.equal(r.last, 4);
+    assert.equal(r.mean, 3.5);
+    assert.equal(r.lastAt, new Date(now - 2 * H).toISOString());
+  });
+
+  test("the current reading counts, so the run that first sees a drop reports it", () => {
+    const r = observedStellariumDrops([line(5, 0)], now, 3);
+    assert.equal(r.count, 1);
+    assert.equal(r.last, 3);
+    assert.equal(r.lastAt, new Date(now).toISOString());
+  });
+
+  test("lines without a stellarium field (pre-founding history) are skipped", () => {
+    const lines = [JSON.stringify({ capturedAt: new Date(now - 9 * H).toISOString(), lifetimeCredits: 1 }), line(4, 2), line(1, 5)];
+    const r = observedStellariumDrops(lines, now, 5);
+    assert.equal(r.count, 1);
+    assert.equal(r.last, 3);
   });
 });

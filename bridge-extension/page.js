@@ -146,6 +146,9 @@
             };
           }) : [],
           nextBaseCost: lab ? (lab.nextBaseCost || 0) : 0,
+          // The building the panel offers to build next (null when it offers
+          // none, e.g. the Rare Material Facility is locked with dungeons).
+          nextBase: (lab && lab.nextBase && lab.nextBase.building) ? lab.nextBase.building : null,
           nextBuildingCost: lab ? (lab.nextBuildingCost || 0) : 0,
         },
         // Lifetime credits earned + registration time: the base upkeep formula

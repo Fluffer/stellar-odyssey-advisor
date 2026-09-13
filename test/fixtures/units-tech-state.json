@@ -1,0 +1,647 @@
+{
+ "player": {
+  "craftLevel": 65,
+  "currentXp": 10517,
+  "targetXp": 43150,
+  "rangeBonus": 11,
+  "successBonus": 6.5,
+  "dust": 2669564,
+  "parts": 458,
+  "qc": 67,
+  "totalCatalysts": 380,
+  "installedCount": 56,
+  "unequippedCount": 324
+ },
+ "units": {
+  "credits": 872574904,
+  "droids": {
+   "count": 7,
+   "rows": [
+    {
+     "skill": "efficiency",
+     "level": 35,
+     "uneven": false,
+     "costStepOne": 33949827.1921925,
+     "costStepAll": 237648790.3453475,
+     "costPlusOneAll": 2578321513.4458675,
+     "affordableStepsAll": 3,
+     "marginalDamage": null,
+     "marginalYield": 0.058824,
+     "creditsPerPctYield": 4039997116
+    },
+    {
+     "skill": "storage",
+     "level": 35,
+     "uneven": false,
+     "costStepOne": 33949827.1921925,
+     "costStepAll": 237648790.3453475,
+     "costPlusOneAll": 2578321513.4458675,
+     "affordableStepsAll": 3,
+     "marginalDamage": null,
+     "marginalYield": 0.058824,
+     "creditsPerPctYield": 4039997116
+    },
+    {
+     "skill": "maneuverability",
+     "level": 35,
+     "uneven": false,
+     "costStepOne": 33949827.1921925,
+     "costStepAll": 237648790.3453475,
+     "costPlusOneAll": 2578321513.4458675,
+     "affordableStepsAll": 3,
+     "marginalDamage": null,
+     "marginalYield": 0.057143,
+     "creditsPerPctYield": 4158843434
+    }
+   ],
+   "list": [
+    {
+     "name": "Droid 1",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    },
+    {
+     "name": "Droid 2",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    },
+    {
+     "name": "Droid 3",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    },
+    {
+     "name": "Droid 4",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    },
+    {
+     "name": "Droid 5",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    },
+    {
+     "name": "Droid 6",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    },
+    {
+     "name": "Droid 7",
+     "efficiency": 35,
+     "storage": 35,
+     "maneuverability": 35
+    }
+   ],
+   "nextPrice": 100000000000,
+   "priceSource": "captured",
+   "breakEvenLevel": 40.8,
+   "catchUpCost": 5456216672.626595,
+   "survival": {
+    "modBonus": 20,
+    "count": 7,
+    "perDroid": [
+     {
+      "name": "Droid 1",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     },
+     {
+      "name": "Droid 2",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     },
+     {
+      "name": "Droid 3",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     },
+     {
+      "name": "Droid 4",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     },
+     {
+      "name": "Droid 5",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     },
+     {
+      "name": "Droid 6",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     },
+     {
+      "name": "Droid 7",
+      "maneuverability": 35,
+      "dodge": 87.5,
+      "capped": false,
+      "breakdown": {
+       "base": 50,
+       "maneuverability": 17.5,
+       "mods": 20
+      }
+     }
+    ],
+    "avgDodge": 87.5,
+    "expectedAlive": 6.125,
+    "maneuverabilityCap": 60,
+    "cappedCount": 0,
+    "noModsCap": 100,
+    "modPlan": [
+     {
+      "slot": "laser_slot",
+      "value": 10,
+      "removableAt": 80,
+      "removableNow": false
+     },
+     {
+      "slot": "probes_slot",
+      "value": 10,
+      "removableAt": 100,
+      "removableNow": false
+     }
+    ],
+    "lastAction": {
+     "alive": 6,
+     "total": 7
+    }
+   },
+   "bestSkill": "efficiency"
+  },
+  "clones": {
+   "count": 7,
+   "rows": [
+    {
+     "skill": "critical_chance",
+     "level": 29,
+     "uneven": false,
+     "costStepOne": 11443487.691528544,
+     "costStepAll": 80104413.8406998,
+     "costPlusOneAll": 871406091.6023915,
+     "affordableStepsAll": 10,
+     "marginalDamage": 0.00524
+    },
+    {
+     "skill": "critical_damage",
+     "level": 28,
+     "uneven": false,
+     "costStepOne": 9511030.304865925,
+     "costStepAll": 66577212.13406148,
+     "costPlusOneAll": 724655198.2221376,
+     "affordableStepsAll": 11,
+     "marginalDamage": 0.00262
+    },
+    {
+     "skill": "dual_shot",
+     "level": 29,
+     "uneven": false,
+     "costStepOne": 11443487.691528544,
+     "costStepAll": 80104413.8406998,
+     "costPlusOneAll": 871406091.6023915,
+     "affordableStepsAll": 10,
+     "marginalDamage": 0.00818
+    }
+   ],
+   "list": [
+    {
+     "name": "Clone 1",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    },
+    {
+     "name": "Clone 2",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    },
+    {
+     "name": "Clone 3",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    },
+    {
+     "name": "Clone 4",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    },
+    {
+     "name": "Clone 5",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    },
+    {
+     "name": "Clone 6",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    },
+    {
+     "name": "Clone 7",
+     "critical_chance": 29,
+     "critical_damage": 28,
+     "dual_shot": 29
+    }
+   ],
+   "nextPrice": 100000000000,
+   "priceSource": "captured",
+   "breakEvenLevel": 40.8,
+   "damageBreakEvenLevel": 38,
+   "catchUpCost": 1622763973.7478127,
+   "damage": {
+    "totalMultiplier": 10.549,
+    "plusOnePctAll": 1.53,
+    "eighthAtZero": 9.48,
+    "eighthAtParity": 14.25,
+    "perPctUpgradeCost": 1608173626.6447537,
+    "perPctBuyCost": 7132158149.129662
+   }
+  }
+ },
+ "tech": {
+  "quantumCores": 67,
+  "skills": [
+   {
+    "key": "battling_weapon_boost",
+    "label": "battling weapon",
+    "category": "battling",
+    "desc": "Weapon damage +1% per level",
+    "level": 73,
+    "locked": false,
+    "maxed": false,
+    "costNext": 148,
+    "cumulativeSpent": 5402,
+    "coresToMax": 4698,
+    "affordable": false
+   },
+   {
+    "key": "battling_hull_boost",
+    "label": "battling hull",
+    "category": "battling",
+    "desc": "Hull +1% per level",
+    "level": 50,
+    "locked": false,
+    "maxed": false,
+    "costNext": 102,
+    "cumulativeSpent": 2550,
+    "coresToMax": 7550,
+    "affordable": false
+   },
+   {
+    "key": "battling_precision_boost",
+    "label": "battling precision",
+    "category": "battling",
+    "desc": "Precision (hit chance) +1% per level",
+    "level": 64,
+    "locked": false,
+    "maxed": false,
+    "costNext": 130,
+    "cumulativeSpent": 4160,
+    "coresToMax": 5940,
+    "affordable": false
+   },
+   {
+    "key": "battling_evasion_boost",
+    "label": "battling evasion",
+    "category": "battling",
+    "desc": "Evasion (dodge) +1% per level",
+    "level": 58,
+    "locked": false,
+    "maxed": false,
+    "costNext": 118,
+    "cumulativeSpent": 3422,
+    "coresToMax": 6678,
+    "affordable": false
+   },
+   {
+    "key": "battling_base_xp_boost",
+    "label": "battling base xp",
+    "category": "battling",
+    "desc": "Battling XP +1% per level",
+    "level": 50,
+    "locked": false,
+    "maxed": false,
+    "costNext": 102,
+    "cumulativeSpent": 2550,
+    "coresToMax": 7550,
+    "affordable": false
+   },
+   {
+    "key": "gathering_base_xp_boost",
+    "label": "gathering base xp",
+    "category": "gathering",
+    "desc": "Gathering XP +1% per level",
+    "level": 60,
+    "locked": false,
+    "maxed": false,
+    "costNext": 122,
+    "cumulativeSpent": 3660,
+    "coresToMax": 6440,
+    "affordable": false
+   },
+   {
+    "key": "gathering_rare_base_drop",
+    "label": "gathering rare base drop",
+    "category": "gathering",
+    "desc": "Rare material drop chance",
+    "level": 100,
+    "locked": false,
+    "maxed": true,
+    "costNext": 202,
+    "cumulativeSpent": 10100,
+    "coresToMax": 0,
+    "affordable": false
+   },
+   {
+    "key": "gathering_common_base_drop",
+    "label": "gathering common base drop",
+    "category": "gathering",
+    "desc": "Common material drop chance",
+    "level": 100,
+    "locked": false,
+    "maxed": true,
+    "costNext": 202,
+    "cumulativeSpent": 10100,
+    "coresToMax": 0,
+    "affordable": false
+   },
+   {
+    "key": "exploring_cosmic_dust_boost",
+    "label": "exploring cosmic dust",
+    "category": "exploring",
+    "desc": "Cosmic dust from exploring",
+    "level": 100,
+    "locked": false,
+    "maxed": true,
+    "costNext": 202,
+    "cumulativeSpent": 10100,
+    "coresToMax": 0,
+    "affordable": false
+   },
+   {
+    "key": "crafting_base_xp_boost",
+    "label": "crafting base xp",
+    "category": "crafting",
+    "desc": "Crafting XP +1% per level - every 10 craft levels = +1 merge range bonus",
+    "level": 50,
+    "locked": false,
+    "maxed": false,
+    "costNext": 102,
+    "cumulativeSpent": 2550,
+    "coresToMax": 7550,
+    "affordable": false
+   },
+   {
+    "key": "pets_base_xp_boost",
+    "label": "pets base xp",
+    "category": "pets",
+    "desc": "Pet XP",
+    "level": 100,
+    "locked": false,
+    "maxed": true,
+    "costNext": 202,
+    "cumulativeSpent": 10100,
+    "coresToMax": 0,
+    "affordable": false
+   },
+   {
+    "key": "voyager_reward_boost",
+    "label": "voyager reward",
+    "category": "voyager",
+    "desc": "Voyager rewards +1% per level",
+    "level": 52,
+    "locked": false,
+    "maxed": false,
+    "costNext": 106,
+    "cumulativeSpent": 2756,
+    "coresToMax": 7344,
+    "affordable": false
+   },
+   {
+    "key": "gb_damage_boost",
+    "label": "gb damage",
+    "category": "galaxyboss",
+    "desc": "Galaxy boss damage +1% per level",
+    "level": 40,
+    "locked": false,
+    "maxed": false,
+    "costNext": 82,
+    "cumulativeSpent": 1640,
+    "coresToMax": 8460,
+    "affordable": false
+   },
+   {
+    "key": "gb_defense_boost",
+    "label": "gb defense",
+    "category": "galaxyboss",
+    "desc": "Galaxy boss defense +1% per level",
+    "level": 40,
+    "locked": false,
+    "maxed": false,
+    "costNext": 82,
+    "cumulativeSpent": 1640,
+    "coresToMax": 8460,
+    "affordable": false
+   },
+   {
+    "key": "gb_reward_boost",
+    "label": "gb reward",
+    "category": "galaxyboss",
+    "desc": "Galaxy boss rewards +1% per level",
+    "level": 40,
+    "locked": false,
+    "maxed": false,
+    "costNext": 82,
+    "cumulativeSpent": 1640,
+    "coresToMax": 8460,
+    "affordable": false
+   },
+   {
+    "key": "base_module_efficiency_boost",
+    "label": "base module efficiency",
+    "category": "base",
+    "desc": "Base module efficiency (locked on Steam)",
+    "level": 60,
+    "locked": true,
+    "maxed": false,
+    "costNext": 122,
+    "cumulativeSpent": 3660,
+    "coresToMax": null,
+    "affordable": false
+   },
+   {
+    "key": "dungeon_battle_boost",
+    "label": "dungeon battle",
+    "category": "dungeons",
+    "desc": "Dungeon battling (locked on Steam)",
+    "level": 0,
+    "locked": true,
+    "maxed": false,
+    "costNext": 2,
+    "cumulativeSpent": 0,
+    "coresToMax": null,
+    "affordable": false
+   },
+   {
+    "key": "dungeon_gather_boost",
+    "label": "dungeon gather",
+    "category": "dungeons",
+    "desc": "Dungeon gathering (locked on Steam)",
+    "level": 0,
+    "locked": true,
+    "maxed": false,
+    "costNext": 2,
+    "cumulativeSpent": 0,
+    "coresToMax": null,
+    "affordable": false
+   },
+   {
+    "key": "dungeon_craft_boost",
+    "label": "dungeon craft",
+    "category": "dungeons",
+    "desc": "Dungeon crafting (locked on Steam)",
+    "level": 0,
+    "locked": true,
+    "maxed": false,
+    "costNext": 2,
+    "cumulativeSpent": 0,
+    "coresToMax": null,
+    "affordable": false
+   },
+   {
+    "key": "dungeon_explore_boost",
+    "label": "dungeon explore",
+    "category": "dungeons",
+    "desc": "Dungeon exploring (locked on Steam)",
+    "level": 0,
+    "locked": true,
+    "maxed": false,
+    "costNext": 2,
+    "cumulativeSpent": 0,
+    "coresToMax": null,
+    "affordable": false
+   },
+   {
+    "key": "dungeon_reward_boost",
+    "label": "dungeon reward",
+    "category": "dungeons",
+    "desc": "Dungeon rewards (locked on Steam)",
+    "level": 0,
+    "locked": true,
+    "maxed": false,
+    "costNext": 2,
+    "cumulativeSpent": 0,
+    "coresToMax": null,
+    "affordable": false
+   }
+  ],
+  "battle": {
+   "baselineAvg": 657.3,
+   "probeLevels": {
+    "brutes": 696,
+    "spectres": 820,
+    "glacials": 694,
+    "machiners": 820,
+    "scorchers": 696,
+    "toxoids": 696,
+    "miners": 697,
+    "dusters": 820
+   },
+   "winratePointsPerLevel": 0.691,
+   "rows": [
+    {
+     "key": "battling_weapon_boost",
+     "level": 73,
+     "cost": 148,
+     "winrateDelta": 0.483,
+     "avgDelta": 0.7,
+     "levelsPerCore": 0.0047
+    },
+    {
+     "key": "battling_hull_boost",
+     "level": 50,
+     "cost": 102,
+     "winrateDelta": 0.146,
+     "avgDelta": 0.21,
+     "levelsPerCore": 0.0021
+    },
+    {
+     "key": "battling_precision_boost",
+     "level": 64,
+     "cost": 130,
+     "winrateDelta": 0,
+     "avgDelta": 0,
+     "levelsPerCore": 0
+    },
+    {
+     "key": "battling_evasion_boost",
+     "level": 58,
+     "cost": 118,
+     "winrateDelta": 0,
+     "avgDelta": 0,
+     "levelsPerCore": 0
+    }
+   ]
+  },
+  "allocation": [],
+  "leftoverCores": 67,
+  "maxOut": {
+   "coresToMaxAll": 79130,
+   "coresGap": 79063,
+   "unlockedCount": 15,
+   "maxedCount": 4,
+   "defaultRatePerHour": 18,
+   "defaultDailyBonus": 150
+  }
+ },
+ "base": {
+  "phase": "live"
+ },
+ "capturedAt": "2026-09-12T23:34:19.368Z",
+ "source": "steam"
+}

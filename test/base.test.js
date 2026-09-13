@@ -22,7 +22,7 @@ describe("BaseMath tables", () => {
     assert.equal(BM.STAR_BONUSES["A type"].rate, 6);
     assert.equal(BM.STAR_BONUSES["M type"].rate, 5);
     assert.equal(BM.BODY_BONUSES["Comet"], "exploring");
-    assert.equal(BM.PROVENANCE.client, "1.1.1");
+    assert.equal(BM.PROVENANCE.client, "1.2.0");
   });
 });
 
@@ -113,10 +113,31 @@ describe("BaseMath boost, output, upkeep, income", () => {
     near(BM.questsCoverage(9), 0.75);
     near(BM.questsCoverage(0), 0);
   });
-  test("stellarium per day is an estimate: rate x (1+boost) x 24/5", () => {
-    near(BM.stellariumPerDay(6, 0), 28.8);
-    near(BM.stellariumPerDay(8, 50), 57.6);
+  test("stellarium per day follows the game's drop rate: (1 + boost/100) x 24/5, no star in it", () => {
+    near(BM.stellariumPerDay(0), 4.8);
+    near(BM.stellariumPerDay(50), 7.2);
+    near(BM.stellariumPerDay(225), 15.6);
     assert.equal(BM.ESTIMATES.STELLARIUM_TICK_HOURS, 5);
+    // the unconfirmed footnote variant is the only place the star rate survives
+    near(BM.stellariumPerDayStar(6, 0), 28.8);
+    near(BM.stellariumPerDayStar(8, 50), 57.6);
+  });
+  test("unlockEta: guaranteed drops from the next tick", () => {
+    assert.deepEqual(BM.unlockEta(1, 0, 265.6, 1789270723), { drops: 1, etaTick: 1789270723 });
+    assert.deepEqual(BM.unlockEta(6, 0, 16, 1789270723), { drops: 6, etaTick: 1789270723 + 5 * 5 * 3600 });
+    assert.deepEqual(BM.unlockEta(1, 2, 0, 1789270723), { drops: 0, etaTick: null }, "already affordable");
+    assert.deepEqual(BM.unlockEta(3, 0, 0, 0), { drops: 3, etaTick: null }, "no tick timestamp -> no time");
+  });
+
+  test("drop-rate chip matches the game's header: level 150 at +50% efficiency -> 3 + 25% chance", () => {
+    // Seen live 2026-09-13, client 1.2.0, base "Fluffystan".
+    const miner = { ...BM.MODULES.find(m => m.name === "Stellarium miner"), level: 150, tier: 0 };
+    const boost = BM.moduleBoost(miner, 50);
+    near(boost, 225);
+    assert.deepEqual(BM.ESTIMATES.dropRate(boost), { guaranteed: 3, chance: 25 });
+    assert.deepEqual(BM.ESTIMATES.dropRate(0), { guaranteed: 1, chance: 0 });
+    assert.deepEqual(BM.ESTIMATES.dropRate(99), { guaranteed: 1, chance: 99 });
+    near(BM.ESTIMATES.minerAmount(boost), 3.25);
   });
 });
 
@@ -130,6 +151,7 @@ describe("BaseMath.normalizeBase / defaultModules", () => {
   test("live-shaped base is normalised with table defaults for missing fields", () => {
     const raw = {
       _id: "b1", name: "Home", stellarium: 12, nextStellariumTick: 1788600000, catalystUpkeepReduction: 5,
+      stellariumHourly: 5, bodyType: "icy", systemId: "s1", bodyId: "y1",
       modules: [
         { _id: "m1", name: "Stellarium miner", type: "passive", unlocked: true, level: 20, tier: 2, needs: [], tickCounter: 3, active: true },
         { _id: "m2", name: "Material generator", unlocked: false },
@@ -139,6 +161,9 @@ describe("BaseMath.normalizeBase / defaultModules", () => {
     const b = BM.normalizeBase(raw);
     assert.equal(b.name, "Home");
     assert.equal(b.stellarium, 12);
+    assert.equal(b.stellariumHourly, 5); assert.equal(b.bodyType, "icy");
+    assert.equal(BM.BODY_NODE_BONUSES[b.bodyType], "gathering");
+    assert.equal(BM.normalizeBase({ modules: [] }).bodyType, null);
     assert.equal(b.modules.length, 11, "every table module present, unknown names dropped");
     const miner = b.modules.find(m => m.name === "Stellarium miner");
     assert.equal(miner.level, 20); assert.equal(miner.tier, 2); assert.equal(miner.unlocked, true); assert.equal(miner.active, true);
@@ -155,23 +180,23 @@ describe("BaseMath.normalizeBase / defaultModules", () => {
 
 describe("BaseMath.planUnlocks", () => {
   test("pre-founding: miner comes with founding, ten unlocks cost 220 total, ETA from the estimate", () => {
-    const u = BM.planUnlocks(BM.defaultModules(), 6, 0);
+    const u = BM.planUnlocks(BM.defaultModules(), 0);
     assert.equal(u.length, 11);
     assert.equal(u[0].name, "Stellarium miner"); assert.equal(u[0].cost, 0);
     assert.equal(u[1].cost, 1); assert.equal(u[1].cumulative, 1);
     assert.equal(u[10].cost, 55); assert.equal(u[10].cumulative, 220);
-    near(u[10].daysToUnlock, 220 / 28.8);
+    near(u[10].daysToUnlock, 220 / 4.8);
     assert.equal(u[10].estimate, true);
   });
   test("live: unlocked modules cost nothing more and cumulative counts only what is left", () => {
     const mods = BM.defaultModules();
     mods.find(m => m.name === "Stellarium miner").unlocked = true;
     mods.find(m => m.name === "Material generator").unlocked = true;
-    const u = BM.planUnlocks(mods, 8, 20);
+    const u = BM.planUnlocks(mods, 20);
     const next = u.find(x => !x.unlocked);
     assert.equal(next.cost, 3, "two unlocked -> next costs 1+2");
     assert.equal(u[u.length - 1].cumulative, 219);
-    near(u[u.length - 1].daysToUnlock, 219 / BM.stellariumPerDay(8, 20));
+    near(u[u.length - 1].daysToUnlock, 219 / BM.stellariumPerDay(20));
   });
 });
 
@@ -256,8 +281,10 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
   test("unlocks and targets", () => {
     const plan = BM.planBase(input());
     assert.equal(plan.totalStellariumLeft, 220);
-    near(plan.stellariumPerDay, 28.8);
-    near(plan.daysToAllUnlocks, 220 / 28.8);
+    near(plan.stellariumPerDay, 4.8);
+    near(plan.daysToAllUnlocks, 220 / 4.8);
+    assert.deepEqual(plan.dropRate, { guaranteed: 1, chance: 0 });
+    near(plan.stellariumPerDayStar, 28.8, "footnote variant keeps the A-type rate 6");
     const qs = plan.targets.find(t => t.name === "Quantum server");
     assert.equal(qs.from, 0); assert.equal(qs.to, 50); assert.equal(qs.perMaterial, 1275);
     near(qs.boostAtTarget, 25); near(qs.outputAtTarget, 1.25);
@@ -315,6 +342,26 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
     assert.equal(plan.upkeepNow.perDay, 0);
   });
 
+  test("founded: locked modules have no target unless one is set; unlocked default is at least the current level; no zero rows", () => {
+    const inp = input();
+    inp.founded = true;
+    inp.levels = {};
+    const miner = inp.modules.find(m => m.name === "Stellarium miner");
+    miner.unlocked = true; miner.active = true; miner.level = 166;
+    const plan = BM.planBase(inp);
+    assert.deepEqual(plan.targets.map(t => t.name), ["Stellarium miner"], "only the unlocked module has a target");
+    assert.equal(plan.targets[0].to, 166, "default target never below the current level");
+    assert.equal(plan.targets[0].perMaterial, 0);
+    assert.deepEqual(plan.stockpile, [], "nothing needed -> no stockpile rows");
+    assert.deepEqual(plan.buyFirst, []);
+    // A level typed into a locked module's box is honoured.
+    inp.levels = { "Material generator": 10 };
+    const plan2 = BM.planBase(inp);
+    assert.deepEqual(plan2.targets.map(t => t.name), ["Stellarium miner", "Material generator"]);
+    assert.equal(plan2.targets[1].perMaterial, 55);
+    assert.deepEqual(plan2.stockpile.map(s => s.material), ["aerolite"]);
+  });
+
   test("buyFirst: only base-tier buildings that are actually short", () => {
     const inp = input();
     inp.stocks = Object.assign({}, inp.stocks, { aerolite: 5000 }); // target needs 1275, fully stocked
@@ -345,7 +392,7 @@ describe("lib/base.js planBaseFromState", () => {
     account: { registered: 1786174949, lifetimeCredits: 5.4e9 },
     currentSystem: { name: "Torvornir", star: "A type", bodies: ["Comet", "Gas Planet"] },
     bookmarks: [{ name: "Loxgyn", star: "M type", bodies: ["Comet"] }, { name: "Vak", star: "Black Hole", bodies: ["Belt"] }],
-    gameVersion: "1.1.2", clientBundle: "index-BiPcVSdi.js",
+    gameVersion: "1.2.0", clientBundle: "index-CfS9fhKw.js",
     commonResources: { gold: 1e6 }, rareCurrencies: { silicon: 1e6, cobalt: 1e6, argon: 1e5, dark_matter: 1e5 },
     materials: [{ name: "ingots", quantity: 5000 }, { name: "refined crystals", quantity: 5000 }, { name: "high end crystals", quantity: 5000 },
       { name: "propulsors", quantity: 5000 }, { name: "nanoconductors", quantity: 5000 }, { name: "microcircuits", quantity: 1600 }, { name: "fusion cells", quantity: 1600 }],
@@ -368,7 +415,7 @@ describe("lib/base.js planBaseFromState", () => {
     assert.deepEqual(b.plan.buyFirst, ["Aeroforge", "Cryovault", "Ferric Mill", "Prism Nexus"]);
     assert.equal(b.live, null);
     assert.equal(b.labPanelHint, true, "base-tier list empty and nextBaseCost 0 -> panel never opened");
-    assert.equal(b.provenance.live, "1.1.2"); assert.equal(b.provenance.liveBundle, "index-BiPcVSdi.js"); assert.equal(b.provenance.drift, false);
+    assert.equal(b.provenance.live, "1.2.0"); assert.equal(b.provenance.liveBundle, "index-CfS9fhKw.js"); assert.equal(b.provenance.drift, false);
     const drifted = planBaseFromState(Object.assign(liveState(), { clientBundle: "index-ZZZZ.js" }), { now: 1786174949 + 27 * 86400 });
     assert.equal(drifted.provenance.drift, true);
   });
@@ -398,7 +445,34 @@ describe("lib/base.js planBaseFromState", () => {
     assert.equal(b.live.nextUnlock.name, "Material generator");
     assert.equal(b.live.nextUnlock.cost, 1);
     assert.equal(b.live.nextUnlock.etaDays, 0, "2 stellarium held >= cost 1");
+    assert.equal(b.live.nextUnlock.drops, 0);
+    assert.equal(b.live.nextUnlock.etaTick, null);
+    assert.equal(b.founding, null, "founding readiness is moot once the base exists");
+    assert.deepEqual(b.plan.targets.map(t => t.name), ["Stellarium miner"], "only unlocked modules carry a default target");
     assert.equal(b.plan.upkeep.passiveCount, 1, "live: only unlocked passive modules pay");
+  });
+
+  test("live: next unlock ETA counts guaranteed drops from the next tick (state of 2026-09-13)", () => {
+    const s = liveState();
+    s.player.skills.base_module_efficiency_boost = 60;
+    s.base = { _id: "b1", name: "Fluffystan", stellarium: 0, nextStellariumTick: 1789270723, catalystUpkeepReduction: 0, bodyType: "icy", stellariumHourly: 5,
+      modules: [{ _id: "m1", name: "Stellarium miner", type: "passive", unlocked: true, level: 166, tier: 0, needs: [], tickCounter: 1, active: true }] };
+    const b = planBaseFromState(s, { now: 1786174949 + 35 * 86400 });
+    near(b.stellarium.minerBoost, 265.6);
+    assert.deepEqual(b.stellarium.dropRate, { guaranteed: 3, chance: 65.6 });
+    near(b.stellarium.perDay, 3.656 * 4.8);
+    const nu = b.live.nextUnlock;
+    assert.equal(nu.name, "Material generator"); assert.equal(nu.cost, 1);
+    assert.equal(nu.drops, 1, "cost 1, held 0, 3 guaranteed per drop -> the next drop pays it");
+    assert.equal(nu.etaTick, 1789270723, "paid at the next tick, not 'in 1 h' from the daily average");
+    // Three drops needed: two more tick intervals after the next one.
+    s.base.modules[0].level = 10; s.base.stellarium = 0; s.base.modules.push({ _id: "m2", name: "Material generator", type: "passive", unlocked: true, level: 1, tier: 0, active: true });
+    s.base.modules.push({ _id: "m3", name: "Metal scrap generator", type: "passive", unlocked: true, level: 1, tier: 0, active: true });
+    const b2 = planBaseFromState(s, { now: 1786174949 + 35 * 86400 });
+    assert.equal(b2.live.nextUnlock.cost, 6, "three unlocked -> 1+2+3");
+    assert.equal(b2.stellarium.dropRate.guaranteed, 1, "level 10 at +60%: boost 16 -> 1 guaranteed");
+    assert.equal(b2.live.nextUnlock.drops, 6);
+    assert.equal(b2.live.nextUnlock.etaTick, 1789270723 + 5 * 5 * 3600);
   });
 
   test("dailyQuests from state feeds questsClaimed and upkeep coverage", () => {
