@@ -31,6 +31,7 @@ const { planShipItems } = require("./lib/ship-items.js");
 const { planLab } = require("./lib/lab.js");
 const { planBaseFromState } = require("./lib/base.js");
 const { planVoyager } = require("./lib/voyager.js");
+const { planCraft } = require("./lib/craft.js");
 const PetMath = require("./public/pet-math.js");
 const {
   petXpTarget, petXpBoostCost, petXpBoostCostCumulative, petXpPerHour,
@@ -340,6 +341,10 @@ function analyze(s) {
   // The Voyager emulator reads the voyager catalyst profile (jumps bonus,
   // fuel efficiency, drop chance), so it comes after the context totals.
   const voyager = planVoyager({ ...s, tech }, contextTotals.voyager);
+  // Crafting-XP simulator: the level curve and the Craftron 3000 scrap
+  // conversion. Prefills from the base, pets and the crafting catalyst
+  // total; the GUI recomputes it with the user's overrides.
+  const craft = planCraft(s, { craftingTotals: contextTotals.crafting, pets });
 
   return {
     player, gear, warnings, overrideLosses, contextTotals,
@@ -349,7 +354,7 @@ function analyze(s) {
     // multiplier; treat them as unknown, not as a regression.
     battleTrusted: s.ssBattlingBoostKnown !== false,
     projection, inventory,
-    units, tech, pets, materials, shipItems, lab, base, voyager,
+    units, tech, pets, materials, shipItems, lab, base, voyager, craft,
   };
 }
 

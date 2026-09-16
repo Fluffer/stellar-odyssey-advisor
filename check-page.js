@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js"]) {
+for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js", "craft-math.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -60,6 +60,14 @@ try {
   fail("unit-math.js does not load: " + e.message);
 }
 
+try {
+  const cm = require(path.join(PUBLIC_DIR, "craft-math.js"));
+  if (typeof cm.targetXp !== "function" || typeof cm.craftronBonus !== "function") throw new Error("craft math missing");
+  console.log("  ok: craft-math.js loads as a module");
+} catch (e) {
+  fail("craft-math.js does not load: " + e.message);
+}
+
 let ICON_MAP = null;
 try {
   ICON_MAP = require(path.join(PUBLIC_DIR, "icon-map.js"));
@@ -87,7 +95,7 @@ try {
 // top-level name is ever declared in more than one script.
 {
   const DECL = /^(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm;
-  const SHARED = ["pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js"];
+  const SHARED = ["pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js", "craft-math.js"];
   const wrapped = SHARED.filter(f => !/^\(function \(\) \{$/m.test(fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8")));
   // A wrapped file's column-0 declarations sit inside its function, so only
   // the scripts that really run at top level are scanned for collisions.
@@ -345,7 +353,7 @@ if (!snapshots.length) {
 
 // 4. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
-for (const ref of ["/style.css", "/i18n.js", "/icon-map.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/app.js"]) {
+for (const ref of ["/style.css", "/i18n.js", "/icon-map.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/voyager-math.js", "/craft-math.js", "/app.js"]) {
   if (html.includes(ref)) console.log("  ok: index.html references " + ref);
   else fail("index.html does not reference " + ref);
 }

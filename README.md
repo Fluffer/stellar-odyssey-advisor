@@ -62,6 +62,18 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   and charges you own (plus the unweighted per-craft cost), checked against your current
   material stock. Split into NPC drop materials (with which NPC and location to farm),
   laboratory-produced materials, and everything else, with deficits called out
+- **Crafting** — crafting-XP simulator. The level curve (the game's own targets: level
+  1 needs 100 XP, each level 10% more), the XP still needed from your current level and
+  XP to a target level, and the Craftron 3000 base module, which turns metal scraps into
+  crafting XP at `floor(scraps × (1 + bonus% / 100))`. The bonus is broken down into every
+  factor the client applies — crafting level, Cat pet, global XP event, battlefield PvP,
+  crafting-XP catalysts, the crafting base-XP tech skill, premium, the module's own boost,
+  a gas-giant base, the squadron Forge (3% per Forge level), the crafting dungeon bonus and
+  the level-215+ scaling. The crafting level, module boost, body bonus and catalysts come
+  from the live state; the global XP event is derived from its remaining time and the Forge
+  and dungeon bonuses from the squadron, and all of them stay editable in case a value is
+  missing. It reports the XP gained, the resulting level, and how many scraps or Metal scrap
+  generator hours the target level still needs
 - **Lab** — bottleneck planner for the Laboratory chain: set a warp-capsule target and
   see, from the live buildings and your stock, which raw resource binds (coverage bars),
   how many units each building must run and for how long, the chain time both pipelined
@@ -342,6 +354,7 @@ the bridge status as its first stage.
 | `lib/` | Engine modules (constants, value math, CDP reader, install/merge planners, battle rating, units/tech/pets/materials/ship-items advisors) |
 | `lib/lab.js` | Lab planner adapter (game state → shared chain math) |
 | `lib/base.js` | Base planner adapter |
+| `lib/craft.js` | Crafting-XP simulator adapter (game state → prefilled simulator inputs) |
 | `lib/systems.js` | Starter systems, plane distances, per-system coordinate facts |
 | `advisor-battle.js` | Battle simulator (ported from the game's battle code) |
 | `public/index.html` | GUI page skeleton |
@@ -351,6 +364,7 @@ the bridge status as its first stage.
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
 | `public/lab-math.js` | Shared laboratory chain math and the production emulator, used by both the engine and the GUI |
 | `public/base-math.js` | Shared base-building math (module table, cost curves, upkeep, planBase) |
+| `public/craft-math.js` | Shared crafting-XP math (level curve, Craftron 3000 scrap → XP), used by both the engine and the GUI |
 | `public/unit-math.js` | Shared droid/clone upgrade-cost math and the cost emulator, used by both the engine and the GUI |
 | `public/voyager-math.js` | Shared Voyager upgrade costs (ported from the game) and the upgrade emulator, used by both the engine and the GUI |
 | `lib/voyager.js` | Voyager planner adapter (game state + voyager catalyst profile → emulator inputs) |
