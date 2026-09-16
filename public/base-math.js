@@ -245,6 +245,92 @@ function unlockEta(cost, held, boost, nextTick) {
   return { drops, etaTick: drops > 0 && tick > 0 ? tick + (drops - 1) * ESTIMATES.STELLARIUM_TICK_HOURS * 3600 : null };
 }
 
+
+// --- module output emulator (the GUI's Quantum server emulator) ---
+// The base-module-efficiency tech skill costs 2 x (level + 1) cores per
+// level (lib/tech.js techSkillCostNext) and caps at 100; from a to b that
+// sums to (b - a)(a + b + 1).
+const EFFICIENCY_MAX = 100;
+function efficiencyLevelsCost(from, to) {
+  from = Math.max(0, Math.floor(from || 0));
+  to = Math.max(from, Math.floor(to || 0));
+  return (to - from) * (from + to + 1);
+}
+// Smallest integer >= v, tolerant of float noise (100.0000000001 -> 100).
+function ceilTol(v) { return Math.ceil(v - 1e-9); }
+
+// What a module pays at another level / tier / efficiency skill level, what
+// each of the three costs, and -- from the scenario -- what each lever ALONE
+// needs for the tick's sure amount to step up (boost crossing the next
+// multiple of 100). opts: { module, level, tier, efficiency, toLevel, toTier,
+// toEfficiency, steps, stellariumHourly }. A scenario value below the
+// current one is lifted to it; efficiency is capped at 100.
+function emulateModule(opts) {
+  opts = opts || {};
+  const tpl = MODULES.find(m => m.name === opts.module) || MODULES.find(m => m.name === "Quantum server");
+  const clampInt = (v, lo, hi) => Math.min(hi === undefined ? Infinity : hi, Math.max(lo, Math.floor(Number(v) || 0)));
+  const now = { level: clampInt(opts.level, 0), tier: clampInt(opts.tier, 0), efficiency: clampInt(opts.efficiency, 0, EFFICIENCY_MAX) };
+  const to = {
+    level: clampInt(opts.toLevel === undefined ? now.level : opts.toLevel, now.level),
+    tier: clampInt(opts.toTier === undefined ? now.tier : opts.toTier, now.tier),
+    efficiency: clampInt(opts.toEfficiency === undefined ? now.efficiency : opts.toEfficiency, now.efficiency, EFFICIENCY_MAX),
+  };
+  const boostOf = (level, tier, eff) => moduleBoost({ ...tpl, level, tier }, eff);
+  const at = s => {
+    const mod = { ...tpl, level: s.level, tier: s.tier };
+    const hours = tickHours(mod, opts.stellariumHourly);
+    const expected = expectedOutputPerTick(mod, s.efficiency);
+    return {
+      level: s.level, tier: s.tier, efficiency: s.efficiency,
+      boost: moduleBoost(mod, s.efficiency),
+      guaranteed: guaranteedOutputPerTick(mod, s.efficiency), extraChance: extraDropChance(mod, s.efficiency),
+      expected, tickHours: hours, perHour: expected / hours, perDay: expected / hours * 24,
+    };
+  };
+  const a = at(now), b = at(to);
+  const cost = {
+    levels: { from: now.level, to: to.level, n: to.level - now.level, perMaterial: levelsCost(now.level, to.level), materials: tpl.materials.slice() },
+    tiers: { from: now.tier, to: to.tier, n: to.tier - now.tier, stellarium: tiersCost(now.tier, to.tier) },
+    efficiency: { from: now.efficiency, to: to.efficiency, n: to.efficiency - now.efficiency, cores: efficiencyLevelsCost(now.efficiency, to.efficiency) },
+  };
+  const deltaPerHour = b.perHour - a.perHour;
+  const deltaPerDay = b.perDay - a.perDay;
+  // Cores spent on the efficiency skill against the extra cores the server
+  // pays per day: only meaningful when the module's product IS cores.
+  const paybackDays = tpl.name === "Quantum server" && cost.efficiency.cores > 0
+    ? (deltaPerDay > 0 ? cost.efficiency.cores / deltaPerDay : Infinity) : null;
+
+  // Breakpoints from the scenario: for the next `steps` multiples of 100
+  // boost, the level (at the scenario tier + efficiency), the tier (at the
+  // scenario level + efficiency) and the efficiency level (at the scenario
+  // level + tier) that reach it, each alone, with what that costs. Solved
+  // in closed form, then nudged up while float noise leaves it a hair short.
+  const lvlFactor = tpl.halfLevel ? 0.5 : 1;
+  const fT = 1 + to.tier / 100, fE = 1 + to.efficiency / 100;
+  const stepCount = Math.max(0, Math.floor(opts.steps === undefined ? 5 : opts.steps));
+  const steps = [];
+  const first = Math.floor(b.boost / 100) + 1;
+  for (let m = first; m < first + stepCount; m++) {
+    const need = 100 * m;
+    let L = Math.max(to.level, ceilTol(need / (lvlFactor * fT * fE)));
+    while (boostOf(L, to.tier, to.efficiency) < need - 1e-9) L++;
+    let T = null, E = null;
+    if (to.level > 0) {
+      T = Math.max(to.tier, ceilTol(100 * (need / (lvlFactor * to.level * fE) - 1)));
+      while (boostOf(to.level, T, to.efficiency) < need - 1e-9) T++;
+      E = Math.max(to.efficiency, ceilTol(100 * (need / (lvlFactor * to.level * fT) - 1)));
+      while (E <= EFFICIENCY_MAX && boostOf(to.level, to.tier, E) < need - 1e-9) E++;
+      if (E > EFFICIENCY_MAX) E = null;
+    }
+    steps.push({
+      sure: (tpl.baseAmount || 1) * (1 + m) + (tpl.flatBonus || 0), boostNeeded: need,
+      viaLevels: { level: L, delta: L - to.level, perMaterial: levelsCost(to.level, L) },
+      viaTiers: T === null ? null : { tier: T, delta: T - to.tier, stellarium: tiersCost(to.tier, T) },
+      viaEfficiency: E === null ? null : { level: E, delta: E - to.efficiency, cores: efficiencyLevelsCost(to.efficiency, E) },
+    });
+  }
+  return { module: tpl.name, materials: tpl.materials.slice(), now: a, scenario: b, deltaPerHour, deltaPerDay, cost, paybackDays, steps };
+}
 // Lab math is needed for material production times. In Node it is a
 // sibling module; in the browser it is the LabMath global loaded first.
 const LM = (typeof module !== "undefined" && module.exports) ? require("./lab-math.js") : (typeof window !== "undefined" ? window.LabMath : null);
@@ -450,6 +536,7 @@ const BaseMath = {
   stellariumStep, unlockCost, tierCost, tiersCost,
   moduleBoost, expectedOutputPerTick, guaranteedOutputPerTick, extraDropChance, tickHours, baseProduction, productionByProduct, unlockOrder,
   avgDailyIncome, upkeepPerTick, questsCoverage, stellariumPerDay, stellariumPerDayStar, unlockEta,
+  EFFICIENCY_MAX, efficiencyLevelsCost, emulateModule,
   defaultModules, normalizeBase, planUnlocks, materialsFor, planBase,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = BaseMath;

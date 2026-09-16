@@ -1960,11 +1960,19 @@ function fmtDays(d) {
 }
 // Recompute the plan client-side from the payload input with the stored
 // level boxes applied.
+// The Quantum server emulator's scenario is laid over the plan too: its
+// module-efficiency skill level lifts every module's boost at target, and
+// its tier is the Quantum server's. `planLive` is the plan at the live
+// values, for the figures that describe now rather than the scenario.
 function basePlanFor(b) {
   const BM = window.BaseMath;
   const levels = Object.assign({}, b.input.levels || {}, baseLevels());
-  const input = Object.assign({}, b.input, { levels });
-  return { plan: BM.planBase(input), levels };
+  const qc = baseQcEmuState(b);
+  const emulated = qc.efficiency !== qc.now.efficiency || qc.tier !== qc.now.tier;
+  const modules = (b.input.modules || []).map(m => m.name === 'Quantum server' ? Object.assign({}, m, { tier: qc.tier }) : m);
+  const input = Object.assign({}, b.input, { levels, modules, efficiencyBoost: qc.efficiency });
+  const plan = BM.planBase(input);
+  return { plan, levels, planLive: emulated ? BM.planBase(Object.assign({}, b.input, { levels })) : plan, qc, emulated };
 }
 function baseShortfallCount(b) {
   if (!b || !b.plan) return 0;
@@ -1973,7 +1981,7 @@ function baseShortfallCount(b) {
 function renderBase(b) {
   if (!b) return '<div class="empty-note">' + t('base.empty') + '</div>';
   const BM = window.BaseMath;
-  const { plan } = basePlanFor(b);
+  const { plan, planLive, qc, emulated } = basePlanFor(b);
   setTabCount('base', plan.stockpile.filter(s => s.short > 0).length, true);
   let html = '';
   // The bundle the formulas were read from is only worth showing when the game has moved past it.
@@ -2018,8 +2026,9 @@ function renderBase(b) {
     return '<span class="est"> ' + share + ' &middot; ' + passive
       + ' &middot; ' + quests + t('base.net_per_day', { n: fmtC(u.netPerDay) }) + '</span>';
   };
-  if (b.live && plan.upkeepNow) {
-    html += card(t('base.card_upkeep_now'), fmtC(plan.upkeepNow.perDay) + basis(plan.upkeepNow, true));
+  if (b.live && planLive.upkeepNow) {
+    // "Now" is the live bill, whatever the emulator's scenario says.
+    html += card(t('base.card_upkeep_now'), fmtC(planLive.upkeepNow.perDay) + basis(planLive.upkeepNow, true));
   }
   html += card(t('base.card_upkeep_targets'), fmtC(up.perDay) + basis(up, false));
   html += '</div>';
@@ -2074,7 +2083,11 @@ function renderBase(b) {
   }
 
   // --- modules / targets ---
+  // --- Quantum server emulator: output at another level / tier / efficiency and the cost of each lever ---
+  html += baseQcEmuSection(b);
+
   html += '<h2>' + t('base.h_modules') + '</h2><div class="sub">' + t('base.modules_note') + '</div>';
+  if (emulated) html += '<div class="sub" style="color:var(--warn)">' + t('base.modules_emulated', { eff: qc.efficiency, live: qc.now.efficiency, tier: qc.tier, live_tier: qc.now.tier }) + '</div>';
   const rows = plan.unlocks.map(u => Object.assign({}, BM.MODULES.find(m => m.name === u.name) || {}, u, plan.targets.find(t => t.name === u.name) || {}));
   // A row without a target (founded: a locked module with no level set) has no cost to show.
   const targeted = r => r.to !== undefined;
@@ -2104,6 +2117,146 @@ function renderBase(b) {
     { label: t('base.col_for'), numeric: false, getValue: r => r.modules.length, render: r => r.modules.map(n => esc(moduleLabel(n))).join(', ') },
     { label: t('base.col_produced_by'), numeric: false, getValue: r => r.building || '', render: r => r.bought ? esc(moduleLabel(r.building || '')) : '<span style="color:var(--warn)">' + t('base.buy_building_first', { name: esc(moduleLabel(r.building || '?')) }) + '</span><span class="est">' + t('base.consumes', { list: r.inputs.map(m => esc(materialLabel(m))).join(', ') }) + '</span>' },
     { label: t('base.col_chain_time'), numeric: true, getValue: r => r.hoursPipelined === null ? -1 : r.hoursPipelined, render: r => r.hoursPipelined === null ? '-' : fmtHours(r.hoursPipelined) + (r.binding ? '<span style="color:var(--bad)">' + t('base.binding_pct', { name: esc(materialLabel(r.binding.name)), pct: (r.binding.coverage * 100).toFixed(0) }) + '</span>' : '') },
+  ]);
+  return html;
+}
+
+// ---- Quantum server emulator ----
+// "What does the Quantum server pay at a higher level, tier or module-
+// efficiency skill level, and what does each lever cost?" The math is
+// window.BaseMath.emulateModule, the same file the server-side planner
+// uses. The scenario (level, tier, efficiency) is remembered in this
+// browser; a stored value the game has already passed is lifted to the
+// live one, and efficiency stops at the skill's 100 cap.
+const BASE_QC_EMU_KEY = 'advisor-base-qc-emu';
+function baseQcEmuStore() {
+  try {
+    const v = JSON.parse(localStorage.getItem(BASE_QC_EMU_KEY) || 'null');
+    if (v && typeof v === 'object') return v;
+  } catch (e) {}
+  return {};
+}
+function baseQcEmuSave(store) {
+  try { localStorage.setItem(BASE_QC_EMU_KEY, JSON.stringify(store)); } catch (e) {}
+}
+// Where the server stands now: the normalized module (level 0, locked before
+// founding) and the module-efficiency skill level from the tech tree.
+function baseQcEmuNow(b) {
+  const m = ((b.input && b.input.modules) || []).find(x => x.name === 'Quantum server') || {};
+  return {
+    level: Math.max(0, Math.floor(m.level || 0)), tier: Math.max(0, Math.floor(m.tier || 0)),
+    efficiency: Math.min(window.BaseMath.EFFICIENCY_MAX, Math.max(0, Math.floor((b.input && b.input.efficiencyBoost) || 0))),
+    unlocked: !!m.unlocked, active: !!m.active,
+  };
+}
+function baseQcEmuState(b) {
+  const s = baseQcEmuStore();
+  const now = baseQcEmuNow(b);
+  const pick = (key, hi) => {
+    const v = Math.floor(Number(s[key]));
+    if (!isFinite(v)) return now[key];
+    return Math.min(hi === undefined ? Infinity : hi, Math.max(now[key], v));
+  };
+  return { now, level: pick('level'), tier: pick('tier'), efficiency: pick('efficiency', window.BaseMath.EFFICIENCY_MAX) };
+}
+function setBaseQcEmu(field, value) {
+  if (!['level', 'tier', 'efficiency'].includes(field)) return;
+  const store = baseQcEmuStore();
+  store[field] = Math.max(0, Math.floor(Number(value) || 0));
+  baseQcEmuSave(store);
+  drawBaseQcEmu();
+}
+function bumpBaseQcEmu(field, delta) {
+  const b = window.lastData && window.lastData.base;
+  if (!b) return;
+  setBaseQcEmu(field, baseQcEmuState(b)[field] + delta);
+}
+function resetBaseQcEmu() {
+  try { localStorage.removeItem(BASE_QC_EMU_KEY); } catch (e) {}
+  drawBaseQcEmu();
+}
+// The scenario also drives the targets table and the cards above it, so a
+// change redraws the whole tab (the same way a target box does).
+function drawBaseQcEmu() {
+  if (window.lastData) render(window.lastData);
+}
+function baseQcEmuSection(b) {
+  return headIcon(resIcon('quantum_cores'), t('base.qc_title')) +
+    '<div class="sub">' + t('base.qc_note') + '</div>' +
+    '<div id="base-qc-emu">' + baseQcEmuHtml(b) + '</div>';
+}
+function baseQcEmuHtml(b) {
+  const BM = window.BaseMath;
+  const st = baseQcEmuState(b);
+  const tech = window.lastData && window.lastData.tech;
+  const coresHeld = tech ? (Number(tech.quantumCores) || 0) : 0;
+  const inc = tech && tech.maxOut ? tech.maxOut.income : null;
+  const battling = inc && inc.battlingPerHour != null ? inc.battlingPerHour : null;
+  const emu = BM.emulateModule({
+    module: 'Quantum server', level: st.now.level, tier: st.now.tier, efficiency: st.now.efficiency,
+    toLevel: st.level, toTier: st.tier, toEfficiency: st.efficiency, steps: 5,
+  });
+  const stocks = (b.input && b.input.stocks) || {};
+  const material = emu.materials[0];
+  const materialStock = stocks[material] || 0;
+  const stellariumHeld = b.live ? (b.live.stellarium || 0) : 0;
+  const changed = emu.cost.levels.n > 0 || emu.cost.tiers.n > 0 || emu.cost.efficiency.n > 0;
+  const n = emu.now, s = emu.scenario;
+  const arrow = (a, z, fmt) => a === z ? fmt(a)
+    : '<span class="dimtext">' + fmt(a) + '</span> &rarr; <span style="color:' + (z > a ? 'var(--good)' : 'inherit') + '">' + fmt(z) + '</span>';
+
+  let html = '';
+  if (!st.now.unlocked) html += '<div class="sub" style="color:var(--warn)">' + t('base.qc_locked') + '</div>';
+  else if (!st.now.active) html += '<div class="sub" style="color:var(--warn)">' + t('base.qc_off') + '</div>';
+
+  // --- scenario controls: level, tier, efficiency, each "now -> box" plus bump buttons ---
+  const ctl = (key, label, hi, bumps) => '<span>' + label + ' <span class="dimtext">' + st.now[key] + ' &rarr;</span> ' +
+    '<input class="pet-input base-input" type="number" min="' + st.now[key] + '"' + (hi ? ' max="' + hi + '"' : '') + ' value="' + st[key] + '"' +
+    ' onchange="setBaseQcEmu(' + jsStr(key) + ', this.value)"> ' +
+    bumps.map(d => '<button class="ghost" onclick="bumpBaseQcEmu(' + jsStr(key) + ', ' + d + ')">+' + d + '</button>').join(' ') +
+    (hi ? ' <button class="ghost" onclick="setBaseQcEmu(' + jsStr(key) + ', ' + hi + ')">' + t('base.qc_max_btn') + '</button>' : '') + '</span>';
+  html += '<div class="row" style="gap:14px;flex-wrap:wrap">' +
+    ctl('level', t('base.qc_level'), null, [10, 50, 100]) +
+    ctl('tier', t('base.qc_tier'), null, [1, 5, 10]) +
+    ctl('efficiency', t('base.qc_efficiency'), BM.EFFICIENCY_MAX, [5, 10]) +
+    '<span><button class="ghost" onclick="resetBaseQcEmu()">' + t('units.reset') + '</button></span></div>';
+
+  // --- headline: what the tick pays now and in the scenario, what the scenario costs ---
+  html += '<div class="cards">';
+  html += card(cardIcon(resIcon('quantum_cores', 'mat-tile xs'), t('base.qc_card_per_hour')),
+    arrow(n.perHour, s.perHour, v => v.toFixed(2)) +
+    '<span class="est">' + t('base.output_split', { g: fmtN(s.guaranteed), pct: s.extraChance.toFixed(1) }) +
+    t('base.qc_boost_at', { boost: s.boost.toFixed(1) }) + '</span>');
+  html += card(cardIcon(resIcon('quantum_cores', 'mat-tile xs'), t('base.qc_card_per_day')),
+    arrow(n.perDay, s.perDay, v => v.toFixed(1)) +
+    (battling !== null ? '<span class="est">' + (n.perHour === s.perHour
+      ? t('base.qc_with_battling_same', { a: (battling + n.perHour).toFixed(2) })
+      : t('base.qc_with_battling', { a: (battling + n.perHour).toFixed(2), b: (battling + s.perHour).toFixed(2) })) + '</span>' : ''));
+  const costCard = (label, icon, amount, have, count, noteKey, extra) => card(cardIcon(icon, label),
+    amount > 0
+      ? '<span style="color:' + (amount <= have ? 'inherit' : 'var(--bad)') + '">' + fmtN(amount) + '</span>' +
+        '<span class="est">' + t(noteKey, { n: count, have: fmtN(have) }) + (extra || '') + '</span>'
+      : '<span style="color:var(--dim)">' + (changed ? '&mdash;' : t('base.qc_no_changes')) + '</span>');
+  html += costCard(t('base.qc_card_levels_cost', { mat: esc(materialLabel(material)) }), matIcon(material), emu.cost.levels.perMaterial, materialStock, emu.cost.levels.n, 'base.qc_levels_n');
+  html += costCard(t('base.qc_card_tiers_cost'), resIcon('stellarium', 'mat-tile xs'), emu.cost.tiers.stellarium, stellariumHeld, emu.cost.tiers.n, 'base.qc_tiers_n');
+  const payback = emu.paybackDays === null ? ''
+    : (isFinite(emu.paybackDays) ? t('base.qc_payback', { days: fmtDays(emu.paybackDays) }) : t('base.qc_no_payback'));
+  html += costCard(t('base.qc_card_eff_cost'), resIcon('quantum_cores', 'mat-tile xs'), emu.cost.efficiency.cores, coresHeld, emu.cost.efficiency.n, 'base.qc_eff_n', payback);
+  html += '</div>';
+
+  // --- the next steps of the sure amount, one lever at a time, from the scenario ---
+  html += '<div class="sub" style="margin:14px 0 4px">' + t('base.qc_steps_note', { boost: s.boost.toFixed(1), sure: fmtN(s.guaranteed) }) + '</div>';
+  const dash = '<span style="color:var(--dim)">&mdash;</span>';
+  html += tableHtml('tbl-base-qc-steps', emu.steps, [
+    { label: t('base.qc_col_sure'), numeric: true, getValue: r => r.sure, render: r => '<b>' + fmtN(r.sure) + '</b>' },
+    { label: t('base.qc_col_boost_needed'), numeric: true, getValue: r => r.boostNeeded, render: r => r.boostNeeded + '%' },
+    { label: t('base.qc_col_via_levels'), numeric: true, getValue: r => r.viaLevels.perMaterial,
+      render: r => t('base.qc_via_level', { n: r.viaLevels.level, d: r.viaLevels.delta, cost: fmtN(r.viaLevels.perMaterial), mat: esc(materialLabel(material)) }) },
+    { label: t('base.qc_col_via_tiers'), numeric: true, getValue: r => r.viaTiers ? r.viaTiers.stellarium : -1,
+      render: r => r.viaTiers ? t('base.qc_via_tier', { n: r.viaTiers.tier, d: r.viaTiers.delta, cost: fmtN(r.viaTiers.stellarium) }) : dash },
+    { label: t('base.qc_col_via_eff'), numeric: true, getValue: r => r.viaEfficiency ? r.viaEfficiency.cores : -1,
+      render: r => r.viaEfficiency ? t('base.qc_via_eff', { n: r.viaEfficiency.level, d: r.viaEfficiency.delta, cost: fmtN(r.viaEfficiency.cores) })
+        : '<span style="color:var(--dim)">' + t('base.qc_beyond_cap') + '</span>' },
   ]);
   return html;
 }

@@ -93,7 +93,15 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   buildings to buy first, and the upkeep bill at the targets as a share of your average
   daily income. After founding: the live module table with boost, output per tick and per
   hour (sure amount plus the extra-drop chance), what each module is set to produce, next
-  level and tier cost, and the next unlock's ETA counted in miner drops. The base's hourly
+  level and tier cost, and the next unlock's ETA counted in miner drops. A **Quantum server
+  emulator** answers "what does the server pay if I raise its level, its tier or the module
+  efficiency skill?": set a scenario for the three levers and it shows cores per hour and per
+  day now versus then (sure amount plus the extra-drop chance, and the total with battling
+  drops), what each lever costs against what you hold (microcircuits, stellarium, quantum
+  cores) with the time the extra cores take to repay the skill levels, and a breakpoint table:
+  for the next steps of the sure amount, the level, tier or efficiency level that gets there
+  alone and its cost. The scenario is remembered in the browser, and the module targets table
+  follows it (boost, output and upkeep at target at the emulated efficiency and tier). The base's hourly
   production also feeds the Technology tab's core income (Quantum server), the Materials
   tab (rate and time to close each deficit) and the Lab tab's raw-resource coverage
 - **Item advisor** (Gear tab) — per-slot ship item analysis: how many levels behind the

@@ -557,3 +557,77 @@ describe("lib/base.js planBaseFromState", () => {
     assert.ok(Array.isArray(b.plan.stockpile));
   });
 });
+describe("BaseMath.emulateModule (Quantum server emulator)", () => {
+  const { techSkillCostNext } = require("../lib/tech.js");
+  test("efficiency skill cost is the tech tree's 2 x (level + 1) per level, summed", () => {
+    assert.equal(BM.EFFICIENCY_MAX, 100);
+    assert.equal(BM.efficiencyLevelsCost(0, 1), techSkillCostNext(0));
+    let sum = 0;
+    for (let l = 10; l < 37; l++) sum += techSkillCostNext(l);
+    assert.equal(BM.efficiencyLevelsCost(10, 37), sum);
+    assert.equal(BM.efficiencyLevelsCost(0, 100), 100 * 101, "cores to max the skill from 0");
+    assert.equal(BM.efficiencyLevelsCost(40, 40), 0);
+    assert.equal(BM.efficiencyLevelsCost(50, 40), 0, "never negative");
+  });
+
+  test("now vs scenario: output, the cost of each lever, payback in extra cores", () => {
+    // Live on 2026-09-13: level 69, tier 0, efficiency 75 -> 4 sure + 60.375%.
+    const e = BM.emulateModule({ module: "Quantum server", level: 69, tier: 0, efficiency: 75, toLevel: 200, toTier: 10, toEfficiency: 100 });
+    assert.equal(e.module, "Quantum server");
+    assert.deepEqual(e.materials, ["microcircuits"]);
+    near(e.now.boost, 60.375); assert.equal(e.now.guaranteed, 4); near(e.now.expected, 4.60375);
+    near(e.now.perHour, 4.60375); near(e.now.perDay, 4.60375 * 24);
+    near(e.scenario.boost, 220); assert.equal(e.scenario.guaranteed, 6); near(e.scenario.extraChance, 20); near(e.scenario.expected, 6.2);
+    near(e.deltaPerHour, 6.2 - 4.60375); near(e.deltaPerDay, (6.2 - 4.60375) * 24);
+    assert.equal(e.cost.levels.n, 131); assert.equal(e.cost.levels.perMaterial, BM.levelsCost(69, 200));
+    assert.equal(e.cost.tiers.n, 10); assert.equal(e.cost.tiers.stellarium, 55);
+    assert.equal(e.cost.efficiency.n, 25); assert.equal(e.cost.efficiency.cores, 4400);
+    near(e.paybackDays, 4400 / ((6.2 - 4.60375) * 24));
+  });
+
+  test("a scenario below the live values is lifted to them; efficiency stops at the cap", () => {
+    const e = BM.emulateModule({ level: 69, tier: 3, efficiency: 75, toLevel: 10, toTier: 1, toEfficiency: 500 });
+    assert.equal(e.scenario.level, 69); assert.equal(e.scenario.tier, 3); assert.equal(e.scenario.efficiency, 100);
+    assert.equal(e.cost.levels.n, 0); assert.equal(e.cost.tiers.n, 0); assert.equal(e.cost.efficiency.cores, BM.efficiencyLevelsCost(75, 100));
+    const same = BM.emulateModule({ level: 69, tier: 0, efficiency: 75 });
+    assert.equal(same.deltaPerDay, 0);
+    assert.equal(same.paybackDays, null, "nothing spent on efficiency, nothing to repay");
+    const wasted = BM.emulateModule({ level: 0, tier: 0, efficiency: 0, toEfficiency: 10 });
+    assert.equal(wasted.paybackDays, Infinity, "cores spent, no extra output at level 0");
+  });
+
+  test("breakpoints: each lever alone to the next multiples of 100 boost, from the scenario", () => {
+    const e = BM.emulateModule({ level: 69, tier: 0, efficiency: 75, toLevel: 200, toTier: 10, toEfficiency: 100, steps: 2 });
+    assert.equal(e.steps.length, 2);
+    const s = e.steps[0];
+    assert.equal(s.sure, 7); assert.equal(s.boostNeeded, 300);
+    // 273/2 x 1.1 x 2 = 300.3 >= 300, 272 falls short.
+    assert.deepEqual(s.viaLevels, { level: 273, delta: 73, perMaterial: BM.levelsCost(200, 273) });
+    // 200/2 x 1.5 x 2 = 300 exactly: the closed form must not round up to 51.
+    assert.deepEqual(s.viaTiers, { tier: 50, delta: 40, stellarium: BM.tiersCost(10, 50) });
+    assert.equal(s.viaEfficiency, null, "would need efficiency 173, past the 100 cap");
+    assert.equal(e.steps[1].sure, 8); assert.equal(e.steps[1].boostNeeded, 400);
+    for (const step of e.steps) {
+      near(BM.moduleBoost({ ...BM.MODULES[4], level: step.viaLevels.level, tier: 10 }, 100) >= step.boostNeeded, true);
+      near(BM.moduleBoost({ ...BM.MODULES[4], level: 200, tier: step.viaTiers.tier }, 100) >= step.boostNeeded, true);
+    }
+  });
+
+  test("breakpoints reachable by efficiency alone, and exact boundaries", () => {
+    // Level 100, tier 0, efficiency 0: boost 50. Next step is boost 100.
+    const e = BM.emulateModule({ level: 100, tier: 0, efficiency: 0, steps: 1 });
+    assert.deepEqual(e.steps[0].viaLevels, { level: 200, delta: 100, perMaterial: BM.levelsCost(100, 200) });
+    assert.deepEqual(e.steps[0].viaTiers, { tier: 100, delta: 100, stellarium: BM.tiersCost(0, 100) });
+    assert.deepEqual(e.steps[0].viaEfficiency, { level: 100, delta: 100, cores: 10100 });
+    // At level 0 no tier or efficiency multiplies anything: only levels get there.
+    const zero = BM.emulateModule({ level: 0, tier: 0, efficiency: 0, steps: 1 });
+    assert.equal(zero.steps[0].viaTiers, null); assert.equal(zero.steps[0].viaEfficiency, null);
+    assert.equal(zero.steps[0].viaLevels.level, 200);
+    // Another module: full level, no flat bonus, and the miner's 5-hour tick.
+    const miner = BM.emulateModule({ module: "Stellarium miner", level: 166, tier: 0, efficiency: 60, toLevel: 200, stellariumHourly: 5, steps: 1 });
+    near(miner.now.boost, 265.6); near(miner.now.perHour, (1 + 2.656) / 5);
+    assert.equal(miner.steps[0].sure, 5); assert.equal(miner.steps[0].boostNeeded, 400);
+    assert.equal(miner.steps[0].viaLevels.level, 250);
+    assert.equal(miner.paybackDays, null, "payback in cores only makes sense for the Quantum server");
+  });
+});

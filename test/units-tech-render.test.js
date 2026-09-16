@@ -62,3 +62,111 @@ describe("tech tab optimal-spend gates", () => {
     assert.match(out, /No combat ranking/);
   });
 });
+describe("base tab Quantum server emulator", () => {
+  const { planBaseFromState } = require("../lib/base.js");
+  // A founded base with the server at level 69 / tier 0 and the efficiency
+  // skill at 75 (the 2026-09-13 state), laid over the frozen tech slice so
+  // the emulator can read the core pile and battling drops from it.
+  const founded = () => {
+    const d = snapshot();
+    const s = {
+      lab: { buildings: [], queue: [], queueSlots: 10 }, baseLab: { buildings: [] },
+      account: { registered: 1786174949, lifetimeCredits: 5.4e9 },
+      currentSystem: { name: "Torvornir", star: "A type", bodies: [] }, bookmarks: [],
+      gameVersion: "1.2.0", clientBundle: "index-CfS9fhKw.js",
+      commonResources: {}, rareCurrencies: {},
+      materials: [{ name: "microcircuits", quantity: 12000 }],
+      ship: {}, player: { skills: { base_module_efficiency_boost: 75 } },
+      base: { _id: "b1", name: "Fluffystan", stellarium: 40, nextStellariumTick: 1789270723, bodyType: "icy", stellariumHourly: 5,
+        modules: [
+          { _id: "m1", name: "Stellarium miner", type: "passive", unlocked: true, level: 166, tier: 0, active: true },
+          { _id: "m3", name: "Quantum server", type: "passive", unlocked: true, level: 69, tier: 0, active: true },
+        ] },
+    };
+    d.base = planBaseFromState(s, { now: 1786174949 + 35 * 86400 });
+    d.tech.quantumCores = 3000;
+    d.tech.maxOut.income = { battlingLevel: 60, battlingPerHour: 18, quantumServer: null, ratePerHour: 22.6 };
+    return d;
+  };
+
+  test("no scenario: live output, no costs, and the breakpoint table from the live boost", () => {
+    const out = text(sandbox(founded()).render("base"));
+    assert.match(out, /Quantum server emulator/);
+    assert.match(out, /Cores \/ h from the server4\.604 sure \+ 60\.4% one more/);
+    assert.match(out, /with battling drops: 22\.60 \/ h/);
+    assert.match(out, /Levels \(microcircuits\)no changes yet/);
+    // Next sure core from boost 60.4: level 115 alone, tier 66 alone, efficiency cannot.
+    assert.match(out, /level 115 \(\+46\).*4,255 microcircuits/);
+    assert.match(out, /tier 66 \(\+66\).*2,211 stellarium/);
+    assert.match(out, /beyond the 100 cap/);
+  });
+
+  test("a stored scenario: output now -> scenario, each lever's cost against the pile, payback", () => {
+    const storage = { "advisor-base-qc-emu": JSON.stringify({ level: 200, tier: 10, efficiency: 100 }) };
+    const out = text(sandbox(founded(), { storage }).render("base"));
+    assert.match(out, /4\.60.*6\.20/);
+    assert.match(out, /6 sure \+ 20\.0% one more.*boost 220\.0%/);
+    assert.match(out, /with battling drops: 22\.60.*24\.20 \/ h/);
+    assert.match(out, /Levels \(microcircuits\)17,685\+131 lvl.*12,000 in stock/);
+    assert.match(out, /Tiers \(stellarium\)55\+10 tier.*40 held/);
+    assert.match(out, /Efficiency \(cores\)4,400\+25 lvl.*3,000 held.*repay it in 114\.9 d/);
+    // The steps start from the scenario, and efficiency is maxed so that lever is gone.
+    assert.match(out, /7300%level 273 \(\+73\)/);
+  });
+
+  test("a stored scenario the game has passed is lifted to the live values", () => {
+    const storage = { "advisor-base-qc-emu": JSON.stringify({ level: 10, tier: 0, efficiency: 5 }) };
+    const out = text(sandbox(founded(), { storage }).render("base"));
+    assert.match(out, /Levels \(microcircuits\)no changes yet/);
+    assert.match(out, /Efficiency \(cores\)no changes yet/);
+  });
+
+  test("before the server is unlocked the emulation says so and starts at level 0", () => {
+    const d = founded();
+    const qs = d.base.input.modules.find(m => m.name === "Quantum server");
+    qs.unlocked = false; qs.active = false; qs.level = 0;
+    const out = text(sandbox(d).render("base"));
+    assert.match(out, /Quantum server is not unlocked yet/);
+    // Level 0 still pays the base 1 plus the flat 3 the game adds to every tick.
+    assert.match(out, /Cores \/ h from the server4\.004 sure \+ 0\.0% one more/);
+  });
+});
+
+describe("base tab targets follow the Quantum server emulator", () => {
+  const { planBaseFromState } = require("../lib/base.js");
+  const state = () => ({
+    lab: { buildings: [], queue: [], queueSlots: 10 }, baseLab: { buildings: [] },
+    account: { registered: 1786174949, lifetimeCredits: 5.4e9 },
+    currentSystem: { name: "Torvornir", star: "A type", bodies: [] }, bookmarks: [],
+    gameVersion: "1.2.0", clientBundle: "index-CfS9fhKw.js",
+    commonResources: {}, rareCurrencies: {}, materials: [],
+    ship: {}, player: { skills: { base_module_efficiency_boost: 81 } },
+    base: { _id: "b1", name: "Fluffystan", stellarium: 0, nextStellariumTick: 1789270723, bodyType: "icy", stellariumHourly: 5,
+      modules: [
+        { _id: "m1", name: "Stellarium miner", type: "passive", unlocked: true, level: 188, tier: 0, active: true },
+        { _id: "m3", name: "Quantum server", type: "passive", unlocked: true, level: 101, tier: 0, active: true },
+      ] },
+  });
+  const page = storage => {
+    const d = snapshot();
+    d.base = planBaseFromState(state(), { now: 1786174949 + 35 * 86400 });
+    return text(sandbox(d, { storage }).render("base"));
+  };
+
+  test("the emulated efficiency and tier change boost and output at target, not the live upkeep", () => {
+    const live = page();
+    // Quantum server target defaults to its level 101: boost 101/2 x 1.81 = 91.4%.
+    assert.match(live, /Quantum server unlockedpassive-microcircuits from 1010 of each91%4\.91/);
+    assert.doesNotMatch(live, /follow the emulator above/);
+    const emu = page({ "advisor-base-qc-emu": JSON.stringify({ level: 101, tier: 10, efficiency: 100 }) });
+    assert.match(emu, /follow the emulator above: module efficiency skill 100% \(live 81%\), Quantum server tier 10 \(live 0\)/);
+    // 101/2 x 1.1 x 2 = 111.1% -> 5 sure + 11.1%: 5.11 expected.
+    assert.match(emu, /Quantum server unlockedpassive-microcircuits from 1010 of each111%5\.11/);
+    // The miner's target boost rises with the skill too: 188 x 2 = 376%.
+    assert.match(emu, /Stellarium miner unlockedpassive-microcircuits, fusion cells from 1880 of each376%/);
+    // "Upkeep / day now" is the live bill in both renders.
+    const nowBill = s => (s.match(/Upkeep \/ day now([\d.]+[kMB]?)/) || [])[1];
+    assert.ok(nowBill(live), "live bill present");
+    assert.equal(nowBill(emu), nowBill(live));
+  });
+});
