@@ -60,6 +60,18 @@ describe("planTech", () => {
     assert.equal(row("base_module_efficiency_boost").coresToMax, 100 * 101 - 60 * 61);
   });
 
+  test("maxOut reports assigned, remaining and the total to max unlocked skills", () => {
+    const state = { quantum_cores: 100, player: { skills: { base_module_efficiency_boost: 60, battling_weapon_boost: 10 } } };
+    const tech = core.planTech(state);
+    const assigned = tech.skills.reduce((s, r) => s + (r.locked ? 0 : r.cumulativeSpent), 0);
+    const remaining = tech.skills.reduce((s, r) => s + (r.coresToMax || 0), 0);
+    assert.equal(tech.maxOut.coresAssigned, assigned);
+    assert.equal(tech.maxOut.coresToMaxAll, remaining);
+    assert.equal(tech.maxOut.coresMaxTotal, assigned + remaining);
+    // Every unlocked skill caps at level 100, cumulative 100*101.
+    assert.equal(tech.maxOut.coresMaxTotal, tech.maxOut.unlockedCount * 100 * 101);
+  });
+
   test("synthetic state with no stats/clones -> battle null, shape locked", () => {
     const state = { quantum_cores: 100, player: { skills: {} } };
     const tech = core.planTech(state);

@@ -631,7 +631,9 @@
   "allocation": [],
   "leftoverCores": 67,
   "maxOut": {
+   "coresAssigned": 72370,
    "coresToMaxAll": 79130,
+   "coresMaxTotal": 151500,
    "coresGap": 79063,
    "unlockedCount": 15,
    "maxedCount": 4,

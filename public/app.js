@@ -1083,7 +1083,9 @@ function renderTech(t) {
   html += card(cardIcon(resIcon('quantum_cores', 'mat-tile xs'), I18n.t('tech.card_quantum_cores')), t.quantumCores.toLocaleString());
   if (t.battle) html += card(I18n.t('tech.card_avg_npc_level'), t.battle.baselineAvg);
   if (t.maxOut) {
-    html += card(I18n.t('tech.card_qc_to_max_all'), fmtC(t.maxOut.coresToMaxAll) + ' <span style="font-size:11px;color:var(--dim)">' + I18n.t('tech.maxed_of', { n: t.maxOut.maxedCount, total: t.maxOut.unlockedCount }) + '</span>');
+    html += card(I18n.t('tech.card_qc_assigned'), fmtC(t.maxOut.coresAssigned) + ' <span style="font-size:11px;color:var(--dim)">' + I18n.t('tech.maxed_of', { n: t.maxOut.maxedCount, total: t.maxOut.unlockedCount }) + '</span>');
+    html += card(I18n.t('tech.card_qc_max_needed'), fmtC(t.maxOut.coresMaxTotal));
+    html += card(I18n.t('tech.card_qc_to_max_all'), fmtC(t.maxOut.coresToMaxAll));
     html += card(I18n.t('tech.card_gap_after_stock'), fmtC(t.maxOut.coresGap));
     html += '<div class="card"><div class="k">' + I18n.t('tech.time_to_cover_gap') + '</div><div class="v" id="qcGapTime">&mdash;</div>' +
       '<div style="font-size:11px;color:var(--dim);margin-top:4px">' +

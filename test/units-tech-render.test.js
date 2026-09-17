@@ -61,6 +61,14 @@ describe("tech tab optimal-spend gates", () => {
     const out = text(sandbox(d).render("tech"));
     assert.match(out, /No combat ranking/);
   });
+
+  test("shows QC assigned and the total needed to max the unlocked skills", () => {
+    const d = snapshot();
+    const out = text(sandbox(d).render("tech"));
+    assert.match(out, /QC assigned72\.4k/);
+    assert.match(out, /QC max needed151\.5k/);
+    assert.match(out, /4\/15 maxed/);
+  });
 });
 describe("base tab Quantum server emulator", () => {
   const { planBaseFromState } = require("../lib/base.js");
