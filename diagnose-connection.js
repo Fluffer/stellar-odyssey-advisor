@@ -63,15 +63,31 @@ if (wsOk) {
 }
 line("");
 
-// ---- Stage 1: enumerate listening ports -----------------------------
-line("Stage 1: listening TCP ports and their owning processes");
-var rows = cdp.listListeners();
+// ---- Stage 1: the game's own DevToolsActivePort ---------------------
+line("Stage 1: the game's DevToolsActivePort (needs no PowerShell)");
+var devPorts = cdp.devtoolsPorts();
+if (devPorts.length) {
+  ok(devPorts.length + " DevToolsActivePort file(s) found, port(s): " + devPorts.join(", "));
+  info("This is the game's own record of the port it opened; the advisor uses it");
+  info("even when PowerShell is blocked.");
+} else {
+  info("no DevToolsActivePort file found under %APPDATA%/%LOCALAPPDATA%.");
+  info("The file is written once the game is running (it launches itself with");
+  info("--remote-debugging-port=0). Start the game and retry.");
+}
+line("");
+
+// ---- Stage 1b: enumerate listening ports -----------------------------
+line("Stage 1b: listening TCP ports and their owning processes");
+var scan = cdp.listListenersDetailed();
+var rows = scan.rows;
 if (rows.length) {
-  ok(rows.length + " listening port(s) enumerated");
+  ok(rows.length + " listening port(s) enumerated via " + scan.method);
 } else {
   bad("could not enumerate any listening port");
-  info("PowerShell or Get-NetTCPConnection is blocked on this machine. The advisor");
-  info("cannot find the game without it.");
+  info("PowerShell/Get-NetTCPConnection and netstat both failed or returned nothing.");
+  if (scan.error) info("reason: " + scan.error);
+  info("Stage 1 (DevToolsActivePort) still finds the game without this.");
 }
 line("");
 

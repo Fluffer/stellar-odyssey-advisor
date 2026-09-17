@@ -285,17 +285,26 @@ in `LANGS`/`LANG_NAMES`, and adding an `<option>` in `public/index.html`.
 
 ### Troubleshooting: "game not found"
 
-Discovery does not depend on the game's name. It enumerates every listening TCP port
-with its owning process, tries the most game-like candidates first (exact process name,
-then a path mentioning the game, then anything under `steamapps`, then any windowed
-`.exe`), and confirms a candidate by asking the page itself whether it exposes the game's
-Pinia stores. So a renamed executable, a non-Steam copy, or playing in another language
-all still resolve — the game is one Electron build that switches language in-app, so the
-process stays `Stellar Odyssey.exe` regardless.
+Discovery first reads the game's own `DevToolsActivePort` file (under
+`%APPDATA%\Stellar Odyssey Game\`, or any sibling folder that has one). The game launches
+itself with `--remote-debugging-port=0`, so Chromium records the random port it picked
+there; reading it needs no PowerShell, no process enumeration and no English Windows, and
+it is how the advisor finds the game on locked-down or non-English machines. A candidate
+is confirmed by asking the page itself whether it exposes the game's Pinia stores.
+
+If that file is missing, discovery falls back to enumerating every listening TCP port
+with its owning process (PowerShell's `Get-NetTCPConnection`, then `netstat -ano` +
+`tasklist`), tries the most game-like candidates first (exact process name, then a path
+mentioning the game, then anything under `steamapps`, then any windowed `.exe`). So a
+renamed executable, a non-Steam copy, or playing in another language all still resolve —
+the game is one Electron build that switches language in-app, so the process stays
+`Stellar Odyssey.exe` regardless.
 
 The error message names the stage that failed:
 
-- *could not enumerate listening ports* — PowerShell or `Get-NetTCPConnection` is blocked
+- *could not enumerate listening ports and no DevToolsActivePort was found* — start the
+  game (the file is written once it runs); if it is running, PowerShell and `netstat` are
+  both blocked and the file was not found under `%APPDATA%`/`%LOCALAPPDATA%`
 - *no debug port found* — the game normally opens a DevTools port on its own, so this
   means it is not running, or a patch disabled it. If it persists, pin a port with the
   Steam launch option `%command% --remote-debugging-port=8788` and start the game **from
