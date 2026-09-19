@@ -117,6 +117,76 @@ module.exports = [
         toggleAuto: "writable",
         setTab: "writable",
         setVariant: "writable",
+        // Cross-file top-level names of the classic-script GUI bundle: app.js
+        // and the per-view view-*.js files share one global scope, so each of
+        // them calls helpers declared in another file of the bundle.
+        esc: "writable",
+        jsStr: "writable",
+        tableHtml: "writable",
+        setTabCount: "writable",
+        card: "writable",
+        cardIcon: "writable",
+        headIcon: "writable",
+        catIcon: "writable",
+        dotColor: "writable",
+        matIcon: "writable",
+        slotIcon: "writable",
+        actIcon: "writable",
+        npcIcon: "writable",
+        bodyIcon: "writable",
+        petIcon: "writable",
+        techIcon: "writable",
+        resIcon: "writable",
+        actLabel: "writable",
+        rarityLabel: "writable",
+        statLabel: "writable",
+        statCatLabel: "writable",
+        npcLabel: "writable",
+        gearSlotLabel: "writable",
+        itemSkillLabel: "writable",
+        actIdLabel: "writable",
+        moduleTypeLabel: "writable",
+        bodyLabel: "writable",
+        techNameLabel: "writable",
+        techBoostLabel: "writable",
+        techDescLabel: "writable",
+        materialLabel: "writable",
+        moduleLabel: "writable",
+        petSlotLabel: "writable",
+        petBodyLabel: "writable",
+        modLabel: "writable",
+        catText: "writable",
+        catTextFromString: "writable",
+        chainGoalText: "writable",
+        capTone: "writable",
+        baseRateCell: "writable",
+        fmtC: "writable",
+        fmtN: "writable",
+        fmtOutput: "writable",
+        fmtH: "writable",
+        fmtHours: "writable",
+        render: "writable",
+        renderShipItemAdvisor: "writable",
+        renderGear: "writable",
+        renderInstalls: "writable",
+        renderProjection: "writable",
+        renderMerges: "writable",
+        renderContextTotals: "writable",
+        renderOverrideLosses: "writable",
+        renderUnits: "writable",
+        renderTech: "writable",
+        calcQcGap: "writable",
+        renderPets: "writable",
+        simPet: "writable",
+        renderInventory: "writable",
+        renderCrafting: "writable",
+        renderLab: "writable",
+        labShortfallCount: "writable",
+        renderBase: "writable",
+        baseShortfallCount: "writable",
+        renderVoyager: "writable",
+        computeInstallKeySet: "writable",
+        computeMergeKeySet: "writable",
       },
     },
     rules: {
@@ -125,14 +195,15 @@ module.exports = [
       "no-redeclare": "off",
     },
   },
-  // public/app.js declares its GUI handlers as top-level functions that the
-  // page wires up through onclick="..." strings inside dynamically generated
-  // HTML -- invisible to static analysis, so no-unused-vars fires on every
-  // one of them. Dead handlers are enforced for real by the dead-handler
-  // check in check-page.js (run via npm run check), so the rule is turned
-  // off for app.js only and every other rule stays as it is.
+  // public/app.js and the per-view public/view-*.js scripts declare their
+  // GUI handlers as top-level functions that the page wires up through
+  // onclick="..." strings inside dynamically generated HTML -- invisible to
+  // static analysis, so no-unused-vars fires on every one of them. Dead
+  // handlers are enforced for real by the dead-handler check in
+  // check-page.js (run via npm run check), so the rule is turned off for
+  // these GUI scripts only and every other rule stays as it is.
   {
-    files: ["public/app.js"],
+    files: ["public/app.js", "public/view-*.js"],
     rules: {
       "no-unused-vars": "off",
     },

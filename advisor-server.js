@@ -76,6 +76,15 @@ const STATIC = {
   "/unit-math.js": ["unit-math.js", "application/javascript"],
   "/voyager-math.js": ["voyager-math.js", "application/javascript"],
   "/craft-math.js": ["craft-math.js", "application/javascript"],
+  "/view-gear.js": ["view-gear.js", "application/javascript"],
+  "/view-units.js": ["view-units.js", "application/javascript"],
+  "/view-tech.js": ["view-tech.js", "application/javascript"],
+  "/view-pets.js": ["view-pets.js", "application/javascript"],
+  "/view-inventory.js": ["view-inventory.js", "application/javascript"],
+  "/view-craft.js": ["view-craft.js", "application/javascript"],
+  "/view-lab.js": ["view-lab.js", "application/javascript"],
+  "/view-base.js": ["view-base.js", "application/javascript"],
+  "/view-voyager.js": ["view-voyager.js", "application/javascript"],
 };
 
 function serveStatic(res, url) {

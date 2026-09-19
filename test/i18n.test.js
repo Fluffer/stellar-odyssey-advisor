@@ -13,7 +13,9 @@ const I18n = require("../public/i18n.js");
 const { scan } = require("../lib/i18n-scan.js");
 
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
-const SOURCES = ["app.js", "index.html"]
+const SOURCES = ["app.js", "index.html", "view-gear.js", "view-units.js",
+  "view-tech.js", "view-pets.js", "view-inventory.js", "view-craft.js",
+  "view-lab.js", "view-base.js", "view-voyager.js"]
   .map(f => fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8"));
 
 const placeholders = s => (String(s).match(/\{\w+\}/g) || []).sort().join(",");

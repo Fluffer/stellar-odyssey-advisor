@@ -17,7 +17,7 @@ function fail(msg) {
 }
 
 // 1. Syntax-check every script the page loads.
-for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js", "craft-math.js"]) {
+for (const f of ["app.js", "i18n.js", "icon-map.js", "pet-math.js", "lab-math.js", "base-math.js", "unit-math.js", "voyager-math.js", "craft-math.js", "view-gear.js", "view-units.js", "view-tech.js", "view-pets.js", "view-inventory.js", "view-craft.js", "view-lab.js", "view-base.js", "view-voyager.js"]) {
   const file = path.join(PUBLIC_DIR, f);
   try {
     execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
@@ -101,7 +101,10 @@ try {
   // the scripts that really run at top level are scanned for collisions.
   const owner = {};
   const dupes = [];
-  for (const f of ["i18n.js", "icon-map.js", "app.js"].concat(wrapped)) {
+  for (const f of ["i18n.js", "icon-map.js", "app.js",
+      "view-gear.js", "view-units.js", "view-tech.js", "view-pets.js",
+      "view-inventory.js", "view-craft.js", "view-lab.js", "view-base.js",
+      "view-voyager.js"].concat(wrapped)) {
     const src = fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8");
     for (const m of src.matchAll(DECL)) {
       if (owner[m[1]] && owner[m[1]] !== f) dupes.push(m[1] + " (" + owner[m[1]] + " and " + f + ")");
@@ -114,7 +117,7 @@ try {
   else console.log("  ok: the shared math files keep their internals out of the global scope");
 }
 
-// 2c. A top-level function in the two GUI-only scripts that nothing in the
+// 2c. A top-level function in the GUI-only scripts that nothing in the
 // GUI references anymore is dead. ESLint cannot be the judge here: the page
 // wires most handlers through onclick="..." strings inside dynamically
 // generated HTML, which static analysis does not see. So the check is done
@@ -125,7 +128,9 @@ try {
 // inside `renderUnits`; the shared *-math.js files are excluded from the
 // declaration scan (lib/ and the tests exercise them via module.exports).
 {
-  const GUI = ["app.js", "i18n.js"];
+  const GUI = ["app.js", "i18n.js", "view-gear.js", "view-units.js",
+    "view-tech.js", "view-pets.js", "view-inventory.js", "view-craft.js",
+    "view-lab.js", "view-base.js", "view-voyager.js"];
   const DECLS = [
     /^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm,
     /^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/gm,
@@ -158,7 +163,9 @@ try {
 // the raw key text on the page, which is easy to miss by eye.
 if (I18N) {
   const { scan } = require("./lib/i18n-scan.js");
-  const sources = ["app.js", "index.html"]
+  const sources = ["app.js", "index.html", "view-gear.js", "view-units.js",
+    "view-tech.js", "view-pets.js", "view-inventory.js", "view-craft.js",
+    "view-lab.js", "view-base.js", "view-voyager.js"]
     .map(f => fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8"));
   const r = scan(sources, I18N.CATALOG.en);
 
@@ -392,7 +399,7 @@ if (!snapshots.length) {
 
 // 4. index.html must reference the stylesheet and all scripts.
 const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
-for (const ref of ["/style.css", "/i18n.js", "/icon-map.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/voyager-math.js", "/craft-math.js", "/app.js"]) {
+for (const ref of ["/style.css", "/i18n.js", "/icon-map.js", "/pet-math.js", "/lab-math.js", "/base-math.js", "/unit-math.js", "/voyager-math.js", "/craft-math.js", "/view-gear.js", "/view-units.js", "/view-tech.js", "/view-pets.js", "/view-inventory.js", "/view-craft.js", "/view-lab.js", "/view-base.js", "/view-voyager.js", "/app.js"]) {
   if (html.includes(ref)) console.log("  ok: index.html references " + ref);
   else fail("index.html does not reference " + ref);
 }

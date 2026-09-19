@@ -370,7 +370,16 @@ the bridge status as its first stage.
 | `advisor-battle.js` | Battle simulator (ported from the game's battle code) |
 | `public/index.html` | GUI page skeleton |
 | `public/style.css` | GUI styles |
-| `public/app.js` | GUI client-side rendering and the pet simulator |
+| `public/app.js` | GUI shared helpers (tables, icons, i18n labels, formatters), the tab orchestrator and auto-refresh/history |
+| `public/view-gear.js` | Gear/battle/installs/merges tabs: item advisor, equipped-gear cards, install and merge plans, per-NPC projection |
+| `public/view-units.js` | Droids & clones tab and its upgrade-cost emulator |
+| `public/view-tech.js` | Technology tab with the quantum-core max-out panel |
+| `public/view-pets.js` | Pets tab, the Korin advisor and the pet simulator |
+| `public/view-inventory.js` | Inventory tab (filterable catalyst table) |
+| `public/view-craft.js` | Crafting tab and its XP simulator |
+| `public/view-lab.js` | Lab tab: bottleneck planner, production emulator, base-tier panel |
+| `public/view-base.js` | Base tab: planner, systems/stellarium sections, Quantum server emulator |
+| `public/view-voyager.js` | Voyager tab and its upgrade emulator |
 | `public/i18n.js` | GUI string catalogue (English + Simplified Chinese) and the `t()` lookup runtime |
 | `public/pet-math.js` | Shared pet formulas used by both the engine and the GUI |
 | `public/lab-math.js` | Shared laboratory chain math and the production emulator, used by both the engine and the GUI |
