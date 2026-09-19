@@ -125,6 +125,18 @@ module.exports = [
       "no-redeclare": "off",
     },
   },
+  // public/app.js declares its GUI handlers as top-level functions that the
+  // page wires up through onclick="..." strings inside dynamically generated
+  // HTML -- invisible to static analysis, so no-unused-vars fires on every
+  // one of them. Dead handlers are enforced for real by the dead-handler
+  // check in check-page.js (run via npm run check), so the rule is turned
+  // off for app.js only and every other rule stays as it is.
+  {
+    files: ["public/app.js"],
+    rules: {
+      "no-unused-vars": "off",
+    },
+  },
   {
     files: ["test/**/*.js"],
     languageOptions: {

@@ -14,7 +14,7 @@ function badge(text, color) {
   try {
     chrome.action.setBadgeText({ text });
     chrome.action.setBadgeBackgroundColor({ color });
-  } catch {}
+  } catch {} // the badge is cosmetic; never let it fail a push or poll
 }
 
 async function gameTab() {

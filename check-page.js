@@ -114,6 +114,45 @@ try {
   else console.log("  ok: the shared math files keep their internals out of the global scope");
 }
 
+// 2c. A top-level function in the two GUI-only scripts that nothing in the
+// GUI references anymore is dead. ESLint cannot be the judge here: the page
+// wires most handlers through onclick="..." strings inside dynamically
+// generated HTML, which static analysis does not see. So the check is done
+// the way the page actually works: a name counts as used when it appears
+// anywhere in the GUI's text (all public/*.js plus index.html) beyond its
+// own declaration -- that catches onclick attributes, template strings and
+// plain internal calls alike. Word boundaries keep `render` from matching
+// inside `renderUnits`; the shared *-math.js files are excluded from the
+// declaration scan (lib/ and the tests exercise them via module.exports).
+{
+  const GUI = ["app.js", "i18n.js"];
+  const DECLS = [
+    /^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm,
+    /^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/gm,
+    /^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b/gm,
+  ];
+  const declared = new Map(); // name -> script that declares it
+  for (const f of GUI) {
+    const src = fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8");
+    for (const re of DECLS)
+      for (const m of src.matchAll(re))
+        if (!declared.has(m[1])) declared.set(m[1], f);
+  }
+  const corpus = ["index.html", ...fs.readdirSync(PUBLIC_DIR).filter(f => f.endsWith(".js"))]
+    .map(f => fs.readFileSync(path.join(PUBLIC_DIR, f), "utf8"));
+  const dead = [];
+  for (const name of [...declared.keys()].sort()) {
+    let seen = 0;
+    const re = new RegExp("\\b" + name + "\\b", "g");
+    for (const src of corpus) seen += [...src.matchAll(re)].length;
+    if (seen <= 1) dead.push(name + " (" + declared.get(name) + ")");
+  }
+  if (dead.length)
+    fail("top-level GUI functions nothing in the GUI references (dead handlers; the corpus above includes the generated onclick markup, so truly used functions cannot land here): " + dead.join(", "));
+  else
+    console.log("  ok: " + declared.size + " handler functions across " + GUI.length + " GUI scripts, 0 dead");
+}
+
 // 3. Every t("key") the GUI calls must exist in the English catalogue, and
 // every English key must have a Chinese translation. A typo'd key renders as
 // the raw key text on the page, which is easy to miss by eye.
@@ -323,7 +362,7 @@ if (!snapshots.length) {
   guiEn.setLang("en");
   for (const tab of TABS) {
     let html;
-    try { html = guiEn.render(tab); } catch { continue; }
+    try { html = guiEn.render(tab); } catch { continue; } // render failures already failed the run above
     for (const [kind, re] of REGIONS) {
       re.lastIndex = 0;
       let m;

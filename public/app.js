@@ -5,10 +5,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 // ---- localStorage-backed "done" checkmarks (installs & merges rows) ----
 function loadDone() {
   try { return new Set(JSON.parse(localStorage.getItem('advisor-done') || '[]')); }
-  catch (e) { return new Set(); }
+  catch { return new Set(); }
 }
 function saveDone(set) {
-  try { localStorage.setItem('advisor-done', JSON.stringify(Array.from(set))); } catch (e) {}
+  try { localStorage.setItem('advisor-done', JSON.stringify(Array.from(set))); } catch {}
 }
 function toggleDone(key, checked) {
   const set = loadDone();
@@ -17,7 +17,7 @@ function toggleDone(key, checked) {
   if (window.lastData) render(window.lastData);
 }
 function resetDone() {
-  try { localStorage.removeItem('advisor-done'); } catch (e) {}
+  try { localStorage.removeItem('advisor-done'); } catch {}
   if (window.lastData) render(window.lastData);
 }
 // Safely embed a string as a single-quoted JS literal inside an
@@ -202,7 +202,7 @@ function loadIcons() {
     window.__iconIds = new Set(ids);
     window.__iconsReady = true;
     if (window.lastData) render(window.lastData);
-  }).catch(() => {});
+  }).catch(() => {}); // icons are cosmetic: any failure here keeps the dot fallback
 }
 // Looked up per call, not frozen at load: the language can change after load.
 // Anything the game invents that we do not know a label for falls back to the
@@ -852,11 +852,11 @@ function unitEmuStore() {
   try {
     const v = JSON.parse(localStorage.getItem(UNIT_EMU_KEY) || 'null');
     if (v && typeof v === 'object') return v;
-  } catch (e) {}
+  } catch {}
   return {};
 }
 function unitEmuSave(store) {
-  try { localStorage.setItem(UNIT_EMU_KEY, JSON.stringify(store)); } catch (e) {}
+  try { localStorage.setItem(UNIT_EMU_KEY, JSON.stringify(store)); } catch {}
 }
 // Levels only ever sit on the game's 0.1 grid; keep targets there too.
 function unitEmuClamp(v) {
@@ -1049,10 +1049,10 @@ function calcQcGap() {
       if (saved.base === d.tech.maxOut.defaultRatePerHour) rateEl.value = saved.rate;
       dailyEl.value = saved.daily;
     }
-  } catch (e) {}
+  } catch {}
   const rate = parseFloat(rateEl.value) || 0;
   const daily = parseFloat(dailyEl.value) || 0;
-  try { localStorage.setItem('advisor-qc-rate', JSON.stringify({ rate: rateEl.value, daily: dailyEl.value, base: d.tech.maxOut.defaultRatePerHour })); } catch (e) {}
+  try { localStorage.setItem('advisor-qc-rate', JSON.stringify({ rate: rateEl.value, daily: dailyEl.value, base: d.tech.maxOut.defaultRatePerHour })); } catch {}
   const gap = d.tech.maxOut.coresGap;
   const perDay = rate * 24 + daily;
   if (gap <= 0) { out.textContent = t('qc.done'); return; }
@@ -1477,13 +1477,13 @@ function renderMaterials(m) {
 // change, so typing in a box does not lose focus.
 function craftSaved() {
   try { return JSON.parse(localStorage.getItem('advisor-craft') || '{}') || {}; }
-  catch (e) { return {}; }
+  catch { return {}; }
 }
 function craftSave(patch) {
   // v2 marks a save whose override boxes carry the live defaults; a v1 save
   // (or none) predates the auto-fill and its stored 0s must not mask them.
   const o = Object.assign(craftSaved(), { v: 2 }, patch);
-  try { localStorage.setItem('advisor-craft', JSON.stringify(o)); } catch (e) {}
+  try { localStorage.setItem('advisor-craft', JSON.stringify(o)); } catch {}
   return o;
 }
 function craftNum(id, fallback) {
@@ -1700,12 +1700,12 @@ function labCapsuleTarget(fallback) {
   try {
     const v = parseInt(localStorage.getItem('advisor-lab-capsules') || '', 10);
     if (v > 0) return v;
-  } catch (e) {}
+  } catch {}
   return fallback || 10;
 }
 function setLabCapsules(v) {
   const n = Math.max(1, Math.floor(Number(v) || 0));
-  try { localStorage.setItem('advisor-lab-capsules', String(n)); } catch (e) {}
+  try { localStorage.setItem('advisor-lab-capsules', String(n)); } catch {}
   if (window.lastData) render(window.lastData);
 }
 function fmtHours(h) {
@@ -1940,11 +1940,11 @@ function labEmuStore() {
   try {
     const v = JSON.parse(localStorage.getItem(LAB_EMU_KEY) || 'null');
     if (v && typeof v === 'object') return v;
-  } catch (e) {}
+  } catch {}
   return {};
 }
 function labEmuSave(store) {
-  try { localStorage.setItem(LAB_EMU_KEY, JSON.stringify(store)); } catch (e) {}
+  try { localStorage.setItem(LAB_EMU_KEY, JSON.stringify(store)); } catch {}
 }
 function labEmuLab() {
   return window.lastData && window.lastData.lab && window.lastData.lab.available ? window.lastData.lab : null;
@@ -2179,14 +2179,14 @@ function labEmuHtml(lab) {
 
 // ---- Base planner ----
 function baseLevels() {
-  try { const v = JSON.parse(localStorage.getItem('advisor-base-levels') || 'null'); if (v && typeof v === 'object') return v; } catch (e) {}
+  try { const v = JSON.parse(localStorage.getItem('advisor-base-levels') || 'null'); if (v && typeof v === 'object') return v; } catch {}
   return {};
 }
 function setBaseLevel(name, v) {
   const levels = baseLevels();
   const n = Math.max(0, Math.floor(Number(v) || 0));
   levels[name] = n;
-  try { localStorage.setItem('advisor-base-levels', JSON.stringify(levels)); } catch (e) {}
+  try { localStorage.setItem('advisor-base-levels', JSON.stringify(levels)); } catch {}
   if (window.lastData) render(window.lastData);
 }
 function fmtDays(d) {
@@ -2369,11 +2369,11 @@ function baseQcEmuStore() {
   try {
     const v = JSON.parse(localStorage.getItem(BASE_QC_EMU_KEY) || 'null');
     if (v && typeof v === 'object') return v;
-  } catch (e) {}
+  } catch {}
   return {};
 }
 function baseQcEmuSave(store) {
-  try { localStorage.setItem(BASE_QC_EMU_KEY, JSON.stringify(store)); } catch (e) {}
+  try { localStorage.setItem(BASE_QC_EMU_KEY, JSON.stringify(store)); } catch {}
 }
 // Where the server stands now: the normalized module (level 0, locked before
 // founding) and the module-efficiency skill level from the tech tree.
@@ -2408,7 +2408,7 @@ function bumpBaseQcEmu(field, delta) {
   setBaseQcEmu(field, baseQcEmuState(b)[field] + delta);
 }
 function resetBaseQcEmu() {
-  try { localStorage.removeItem(BASE_QC_EMU_KEY); } catch (e) {}
+  try { localStorage.removeItem(BASE_QC_EMU_KEY); } catch {}
   drawBaseQcEmu();
 }
 // The scenario also drives the targets table and the cards above it, so a
@@ -2599,11 +2599,11 @@ function voyPlan() {
   try {
     const v = JSON.parse(localStorage.getItem(VOY_EMU_KEY) || 'null');
     if (v && typeof v === 'object') return v;
-  } catch (e) {}
+  } catch {}
   return {};
 }
 function voySavePlan(plan) {
-  try { localStorage.setItem(VOY_EMU_KEY, JSON.stringify(plan)); } catch (e) {}
+  try { localStorage.setItem(VOY_EMU_KEY, JSON.stringify(plan)); } catch {}
 }
 function setVoyPlan(key, value) {
   const plan = voyPlan();
@@ -2919,7 +2919,7 @@ function autoMins() {
   try {
     const v = parseInt(localStorage.getItem('advisor-auto-mins') || '', 10);
     if (Number.isFinite(v) && v >= 1 && v <= AUTO_MINS_MAX) return v;
-  } catch (e) {}
+  } catch {}
   return AUTO_MINS_DEFAULT;
 }
 
@@ -2931,13 +2931,13 @@ function setAutoMins(raw) {
   n = Math.min(AUTO_MINS_MAX, Math.max(1, n));
   const el = document.getElementById('autoMins');
   if (el) el.value = n;
-  try { localStorage.setItem('advisor-auto-mins', String(n)); } catch (e) {}
+  try { localStorage.setItem('advisor-auto-mins', String(n)); } catch {}
   if (autoTimer) { clearInterval(autoTimer); autoTimer = setInterval(refresh, n * 60000); }
   return n;
 }
 
 function autoOn() {
-  try { return localStorage.getItem('advisor-auto-on') === '1'; } catch (e) { return false; }
+  try { return localStorage.getItem('advisor-auto-on') === '1'; } catch { return false; }
 }
 
 function clearAuto() {
@@ -2962,7 +2962,7 @@ function startAuto(firstDelayMs) {
 }
 
 function toggleAuto(on) {
-  try { localStorage.setItem('advisor-auto-on', on ? '1' : '0'); } catch (e) {}
+  try { localStorage.setItem('advisor-auto-on', on ? '1' : '0'); } catch {}
   if (on) startAuto(0); else clearAuto();
 }
 function setTab(t) {
@@ -2992,7 +2992,7 @@ async function loadLast() {
       const capturedMs = Number(new Date(d.capturedAt));
       return Number.isFinite(capturedMs) ? capturedMs : null; // when the shown snapshot was taken
     }
-  } catch (e) { /* no snapshot yet -- keep the "Click Analyze now" empty-note */ }
+  } catch { /* no snapshot yet -- keep the "Click Analyze now" empty-note */ }
   return null;
 }
 

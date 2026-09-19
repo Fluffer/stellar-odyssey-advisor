@@ -138,6 +138,8 @@ async function pruneSnapshots() {
   const excess = files.length - 50;
   if (excess <= 0) return;
   for (const f of files.slice(0, excess)) {
+    // Best effort: a file that cannot be deleted (locked, vanished) simply
+    // stays until the next prune.
     await fs.promises.unlink(path.join(SNAP_DIR, f)).catch(() => {});
   }
 }
@@ -150,11 +152,15 @@ async function appendHistory(entry) {
   try {
     const lines = (await fs.promises.readFile(file, "utf8")).split("\n").filter(Boolean);
     if (lines.length) {
-      const { capturedAt, ...rest } = JSON.parse(lines[lines.length - 1]);
+      const rest = JSON.parse(lines[lines.length - 1]);
+      delete rest.capturedAt;
       lastMetrics = rest;
     }
   } catch { /* missing or corrupt: nothing to dedupe against */ }
-  const { capturedAt, ...rest } = entry;
+  // capturedAt differs on every run, so it is stripped from the comparison:
+  // an idle run has the same metrics on a new stamp and must dedupe away.
+  const rest = { ...entry };
+  delete rest.capturedAt;
   if (lastMetrics && JSON.stringify(lastMetrics) === JSON.stringify(rest)) return;
   await fs.promises.appendFile(file, JSON.stringify(entry) + "\n");
 }

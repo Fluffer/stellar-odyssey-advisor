@@ -2188,10 +2188,10 @@ function detectLang() {
   try {
     const saved = localStorage.getItem(LANG_KEY);
     if (saved && CATALOG[saved]) return saved;
-  } catch (e) {}
+  } catch {}
   try {
     if (typeof navigator !== "undefined" && /^zh/i.test(navigator.language || "")) return "zh";
-  } catch (e) {}
+  } catch {}
   return "en";
 }
 
@@ -2255,7 +2255,7 @@ I18n.applyStatic = function (root) {
 I18n.setLang = function (lang) {
   if (!CATALOG[lang]) return I18n.lang;
   I18n.lang = lang;
-  try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+  try { localStorage.setItem(LANG_KEY, lang); } catch {}
   if (typeof document !== "undefined") {
     if (document.documentElement) document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
     I18n.applyStatic();
