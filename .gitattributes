@@ -1,0 +1,8 @@
+# Text files are LF in the repository and on every platform's checkout.
+# Stops git's "LF will be replaced by CRLF" warnings on Windows and keeps
+# diffs, blame and patches stable across editors and machines.
+* text=auto eol=lf
+
+# Windows batch files must keep CRLF or cmd.exe can misparse them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
