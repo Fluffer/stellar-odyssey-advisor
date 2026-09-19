@@ -80,4 +80,47 @@ describe("planMerges", () => {
     const plans = core.planMerges(pool, 0);
     assert.equal(plans.length, 0);
   });
+
+  test("a pre-existing legendary is not reported as the chain's goal", () => {
+    // 5 normals reach uncommon 100, but no legendary merge is possible: the
+    // lonely legendary already in the pool must not become the plan's goal.
+    const pool = [100, 100, 100, 100, 100].map((r, i) =>
+      ({ _id: "n" + i, stat: "defense", rarity: "normal", range: r, activity: "default" })
+    );
+    pool.push({ _id: "L", stat: "defense", rarity: "legendary", range: 15, activity: "default" });
+    const plans = core.planMerges(pool, 0);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].chainGoal, "uncommon defense 100");
+    assert.equal(plans[0].chainGoalValue, "15.00%");   // 10 base x1.5 uncommon x 100%
+    assert.deepEqual(plans[0].projectedLegendaries, []);
+    assert.equal(plans[0].perfectCount, 0);
+  });
+
+  test("projectedResults expose the surviving merge outputs with unique ids", () => {
+    const pool = [100, 100, 100, 100, 100].map((r, i) =>
+      ({ _id: "g" + i, stat: "defense", rarity: "normal", range: r, activity: "default" })
+    );
+    const plans = core.planMerges(pool, 50);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].projectedResults.length, 1);
+    const p = plans[0].projectedResults[0];
+    assert.equal(p.stat, "defense");
+    assert.equal(p.activity, "default");
+    assert.equal(p.rarity, "uncommon");
+    assert.equal(p.range, 100);
+    assert.equal(p.projected, true);
+    assert.match(p._id, /^projected\|defense\|default\|uncommon\|0$/);
+  });
+
+  test("a legendary the chain creates becomes a perfect goal", () => {
+    const pool = [96, 97, 98, 99, 95].map((r, i) =>
+      ({ _id: "L" + i, stat: "defense", rarity: "legendary", range: r, activity: "default" })
+    );
+    const plans = core.planMerges(pool, 65);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].chainGoal, "perfect legendary defense 100");
+    assert.equal(plans[0].chainGoalValue, "40.00%");   // 10 base x4 legendary x 100%
+    assert.deepEqual(plans[0].projectedLegendaries, [100]);
+    assert.equal(plans[0].perfectCount, 1);
+  });
 });

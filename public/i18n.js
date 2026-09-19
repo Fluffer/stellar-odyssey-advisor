@@ -189,6 +189,7 @@ const EN = {
   "installs.install": "INSTALL",
   "installs.replace_with": "REPLACE {old} WITH",
   "installs.new": "new",
+  "installs.from_merge": "from merge",
   "installs.cap_title": "{stat} total in this tab before &rarr; after / cap",
   "installs.over_cap": "over cap",
   "installs.no_changes": "No changes needed &mdash; already optimal with current inventory.",
@@ -208,6 +209,7 @@ const EN = {
   "merges.pull_first": "TAKE {cat} OUT OF {item} ({act} tab) first &mdash; reinstall result there ({eff} eff)",
   "merges.new": "new",
   "merges.projected_legendaries": "projected legendaries: {list} ({n} perfect)",
+  "merges.eff": "{v} eff",
 
   // ---- droids & clones, upgrade-cost emulator ----
   "skill.efficiency": "Efficiency",
@@ -810,6 +812,8 @@ const EN = {
   "view.variant_resources_label": "Variant B: full resources <span style=\"font-weight:400\">(default slots = gathering only; all specialized tabs filled)</span>",
   "view.variant_full_btn": "Full explore",
   "view.variant_resources_btn": "Full resources",
+  "view.variant_merged_label": "Variant C: full explore + merges <span style=\"font-weight:400\">(strategy of A, plus the catalysts the merge plan produces)</span>",
+  "view.variant_merged_btn": "Full + merges",
   "view.reset_checkmarks": "Reset checkmarks",
   "view.merge_plan": "Merge plan",
   "view.catalyst_inventory": "Catalyst inventory",
@@ -1279,6 +1283,7 @@ const ZH = {
   "installs.install": "安装",
   "installs.replace_with": "将 {old} 替换为",
   "installs.new": "新",
+  "installs.from_merge": "来自融合",
   "installs.cap_title": "本标签页 {stat} 总计：之前 &rarr; 之后 / 上限",
   "installs.over_cap": "超出上限",
   "installs.no_changes": "无需变更 &mdash; 以当前库存已是最优。",
@@ -1298,6 +1303,7 @@ const ZH = {
   "merges.pull_first": "请先从 {item}（{act} 标签页）中取出 {cat} &mdash; 之后把结果装回该处（{eff} 有效）",
   "merges.new": "新",
   "merges.projected_legendaries": "预计传奇：{list}（{n} 个完美）",
+  "merges.eff": "{v} 有效",
 
   // ---- droids & clones, upgrade-cost emulator ----
   "skill.efficiency": "效率",
@@ -1900,6 +1906,8 @@ const ZH = {
   "view.variant_resources_label": "方案 B：全面资源 <span style=\"font-weight:400\">（默认槽位 = 仅采集；所有专用标签页均已填满）</span>",
   "view.variant_full_btn": "全面探索",
   "view.variant_resources_btn": "全面资源",
+  "view.variant_merged_label": "方案 C：全面探索 + 融合 <span style=\"font-weight:400\">（策略同 A，并加入融合方案产出的催化剂）</span>",
+  "view.variant_merged_btn": "全面 + 融合",
   "view.reset_checkmarks": "重置勾选",
   "view.merge_plan": "融合方案",
   "view.catalyst_inventory": "催化剂库存",

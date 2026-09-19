@@ -23,12 +23,14 @@ interface, so it cannot spend, craft, equip or change anything on your account.
   activity card lists the stats that matter there with current / cap, a fill bar and
   the wasted amount when over the cap, plus alerts for activity overrides that lose
   value against what they replace
-- **Installs** — an install/replace plan for the unequipped catalysts in two variants
-  (full explore / full resources). Every battling suggestion is battle-simulated first
-  and dropped if it would lower the win rate. Includes reinstall guidance when a catalyst
-  should move from another item, and a what-if projection of the max NPC level per NPC
-  type with the whole full-explore plan applied. Every action on a capped stat shows
-  that stat's tab total before → after / cap
+- **Installs** — an install/replace plan for the unequipped catalysts in three variants
+  (full explore / full resources / full explore + merges). The merged variant drops the
+  catalysts the merge plan consumes and adds the projected results it produces, so you
+  can see the build the merges unlock; those rows carry a `from merge` badge. Every
+  battling suggestion is battle-simulated first and dropped if it would lower the win
+  rate. Includes reinstall guidance when a catalyst should move from another item, and a
+  what-if projection of the max NPC level per NPC type with the whole plan applied.
+  Every action on a capped stat shows that stat's tab total before → after / cap
 - **Inventory** — every unequipped catalyst in one sortable, filterable table (stat,
   rarity, range, activity, value), tagged with what it's already earmarked for (an
   install or a merge group) and, for the rest, a sell advisor that flags catalysts too

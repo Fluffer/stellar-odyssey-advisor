@@ -231,6 +231,8 @@ function analyze(s) {
         id: a.add._id,
         stat: a.add.stat, rarity: a.add.rarity,
         range: a.add.range, halved: !!a.add.halved,
+        // Catalyst that does not exist yet: it comes out of the merge plan.
+        projected: !!a.add.projected,
         text: fmtCat(a.add),
       },
       gainText: fmtVal(a.add.stat, a.gain),
@@ -307,19 +309,50 @@ function analyze(s) {
   }
   const mergePlans = planMerges(inventoryPool, craftLevel, installedPulls);
 
+  // "Full + merges" variant: the install plan once the suggested merges are
+  // done. Merge inputs leave the candidate pool; the projected results the
+  // chains leave behind join it as fresh candidates. Everything NOT consumed
+  // by a merge (including the base plans' picks) stays available, so this is
+  // a complete plan, not the base plan plus a few additions.
+  const mergeConsumedIds = new Set();
+  const projectedCandidates = [];
+  for (const plan of mergePlans) {
+    for (const st of plan.steps) {
+      for (const g of st.groups) {
+        for (const id of g.ids) {
+          if (id !== "projected") mergeConsumedIds.add(id);
+        }
+      }
+    }
+    for (const c of plan.projectedResults || []) projectedCandidates.push(c);
+  }
+  const mergedPlan = planInstalls(
+    s.ship,
+    installable.filter(c => !mergeConsumedIds.has(c._id)).concat(projectedCandidates),
+    { validateDefault }
+  );
+  const installsMerged = buildPlan(mergedPlan);
+  const freedTextsMerged = mergedPlan.freed.map(f => fmtCat(f));
+
   // What-if projection: per-NPC max levels if every Full-explore action
   // above were applied, so the impact of the whole plan is visible up
-  // front instead of only the per-action deltas.
-  let projection = null;
-  if (validator && battleBase) {
-    const npcLevels = projectShip(s, fullPlan.actions, { ssBoost: s.ssBattlingBoost || 0 });
+  // front instead of only the per-action deltas. The merged variant gets its
+  // own projection because it installs different catalysts.
+  const makeProjection = (plan) => {
+    const npcLevels = projectShip(s, plan.actions, { ssBoost: s.ssBattlingBoost || 0 });
     const names = Object.keys(npcLevels);
     const deltas = {};
     for (const npc of names) deltas[npc] = npcLevels[npc] - battleBase[npc];
     const avgDelta = names.length
       ? Math.round((names.reduce((sum, npc) => sum + deltas[npc], 0) / names.length) * 10) / 10
       : 0;
-    projection = { npcLevels, deltas, avgDelta };
+    return { npcLevels, deltas, avgDelta };
+  };
+  let projection = null;
+  let projectionMerged = null;
+  if (validator && battleBase) {
+    projection = makeProjection(fullPlan);
+    projectionMerged = makeProjection(mergedPlan);
   }
 
   const inventory = planInventory(s, { reservedIds, mergePlans, craftLevel });
@@ -348,12 +381,13 @@ function analyze(s) {
 
   return {
     player, gear, warnings, overrideLosses, contextTotals,
-    installs, installsResources, freedTexts, freedTextsResources,
+    installs, installsResources, installsMerged,
+    freedTexts, freedTextsResources, freedTextsMerged,
     mergePlans, mergeRequirements, battleNote, battleBase,
     // false => every battle figure in this analysis is missing the squadron
     // multiplier; treat them as unknown, not as a regression.
     battleTrusted: s.ssBattlingBoostKnown !== false,
-    projection, inventory,
+    projection, projectionMerged, inventory,
     units, tech, pets, materials, shipItems, lab, base, voyager, craft,
   };
 }

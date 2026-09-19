@@ -455,6 +455,7 @@ function renderInstalls(installs, freed, battleNote, gear, variant, doneSet, pre
           html += t('installs.replace_with', {old: '<span style="color:var(--dim)">' + catText(a.remove) + '</span>'}) + ' ';
         }
         html += '<span style="color:' + dotColor(a.add.rarity) + ';font-weight:600">' + catText(a.add) + '</span>';
+        if (a.add.projected) html += '<span class="badge b-warn">' + t('installs.from_merge') + '</span>';
         if (isNew) html += '<span class="new-badge">' + t('installs.new') + '</span>';
         if (a.capInfo) {
           const ci = a.capInfo;
@@ -596,7 +597,8 @@ function renderMerges(plans, player, reqs, doneSet, prevKeys) {
     html += '<div class="merge-plan"><h3><span class="inv-stat">' + catIcon(p.stat, endTier, null, true) +
       '<span>' + esc(statLabel(p.stat)) + ' <span style="color:var(--dim)">(' +
       actIcon(p.activity, 'mat-tile xs') + esc(actLabel(p.activity)) + ')</span>' +
-      (p.chainGoal ? ' &mdash; ' + t('merges.goal', {goal: '<span style="color:var(--warn)">&rarr; ' + chainGoalText(p.chainGoal) + '</span>'}) : '') + '</span></span></h3>';
+      (p.chainGoal ? ' &mdash; ' + t('merges.goal', {goal: '<span style="color:var(--warn)">&rarr; ' + chainGoalText(p.chainGoal) +
+        (p.chainGoalValue ? ' <span class="dimtext">(' + t('merges.eff', {v: esc(p.chainGoalValue)}) + ')</span>' : '') + '</span>'}) : '') + '</span></span></h3>';
     for (const step of p.steps) {
       const sameTier = step.from === step.to ? t('merges.range_perfection') : '';
       html += '<div class="step"><div class="head"><b>' + esc(rarityLabel(step.from)) + ' &rarr; ' + esc(rarityLabel(step.to)) + sameTier + '</b>' +
@@ -611,7 +613,8 @@ function renderMerges(plans, player, reqs, doneSet, prevKeys) {
         html += '<input type="checkbox" class="donecheck" ' + (isDone ? 'checked' : '') +
           ' onchange="toggleDone(' + jsStr(key) + ', this.checked)">';
         html += '<span class="merge">[' + g.inputs.join(', ') + '] <span class="arrow">&rarr;</span> ' +
-          '<span class="res' + (perfect ? ' perfect' : '') + '">' + esc(rarityLabel(step.to)) + ' ' + g.result + (perfect ? t('merges.perfect') : '') + '</span>';
+          '<span class="res' + (perfect ? ' perfect' : '') + '">' + esc(rarityLabel(step.to)) + ' ' + g.result + (perfect ? t('merges.perfect') : '') + '</span>' +
+          (g.valueText ? ' <span class="dimtext">(' + t('merges.eff', {v: esc(g.valueText)}) + ')</span>' : '');
         if (g.pulled && g.pulled.length) {
           for (const pu of g.pulled) {
             html += ' <span style="color:var(--warn)">' + t('merges.pull_first', {cat: catTextFromString(pu.text), item: esc(pu.item), act: esc(actIdLabel(pu.activity)), eff: esc(pu.reinstallText)}) + '</span>';
@@ -635,7 +638,9 @@ function renderMerges(plans, player, reqs, doneSet, prevKeys) {
 // installs/merges tabs can flag rows that did not exist in the prior fetch.
 function computeInstallKeySet(data, variant) {
   if (!data) return null;
-  const list = variant === 'full' ? data.installs : data.installsResources;
+  const list = variant === 'full' ? data.installs
+    : variant === 'resources' ? data.installsResources
+    : data.installsMerged;
   const set = new Set();
   (list || []).forEach(a => set.add(installKey(variant, a)));
   return set;
@@ -2758,7 +2763,9 @@ function render(d) {
     });
     guard('badges', () => {
       setTabCount('battle', (d.warnings || []).length, true);
-      const curList = variant === 'full' ? d.installs : d.installsResources;
+      const curList = variant === 'full' ? d.installs
+        : variant === 'resources' ? d.installsResources
+        : d.installsMerged;
       setTabCount('installs', (curList || []).length, false);
       setTabCount('merges', (d.mergePlans || []).length, false);
       setTabCount('inventory', d.inventory && d.inventory.counts ? d.inventory.counts.sellCandidates : 0, true);
@@ -2818,17 +2825,23 @@ function render(d) {
     const labels = {
       full: t('view.variant_full_label'),
       resources: t('view.variant_resources_label'),
+      merged: t('view.variant_merged_label'),
     };
+    const projection = variant === 'merged' ? d.projectionMerged : d.projection;
     html += '<h2>' + t('view.install_plan_heading', { variant: labels[variant] }) + '</h2>';
-    if (d.projection) html += renderProjection(d.projection, d.battleBase);
+    if (projection) html += renderProjection(projection, d.battleBase);
     html += '<div class="toolbar" style="margin-bottom:6px">' +
       '<button class="ghost ' + (variant === 'full' ? 'active' : '') + '" onclick="setVariant(&quot;full&quot;)">' + t('view.variant_full_btn') + '</button>' +
       '<button class="ghost ' + (variant === 'resources' ? 'active' : '') + '" onclick="setVariant(&quot;resources&quot;)">' + t('view.variant_resources_btn') + '</button>' +
+      '<button class="ghost ' + (variant === 'merged' ? 'active' : '') + '" onclick="setVariant(&quot;merged&quot;)">' + t('view.variant_merged_btn') + '</button>' +
       '<button class="ghost" style="margin-left:auto" onclick="resetDone()">' + t('view.reset_checkmarks') + '</button></div>';
     const planList = variant === 'full' ? d.installs
-      : d.installsResources;
+      : variant === 'resources' ? d.installsResources
+      : d.installsMerged;
     const prevInstallKeys = computeInstallKeySet(window.prevData, variant);
-    const freedList = variant === 'full' ? d.freedTexts : (d.freedTextsResources || d.freedTexts);
+    const freedList = variant === 'full' ? d.freedTexts
+      : variant === 'resources' ? (d.freedTextsResources || d.freedTexts)
+      : (d.freedTextsMerged || d.freedTexts);
     html += renderInstalls(planList, freedList, d.battleNote, d.gear, variant, doneSet, prevInstallKeys);
   } else if (tab === 'merges') {
     html += '<h2>' + t('view.merge_plan') + '</h2>';

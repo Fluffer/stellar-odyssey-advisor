@@ -398,6 +398,26 @@ describe("analyze() end to end", () => {
     assert.equal(core.analyze(st).battleTrusted, false);
     assert.equal(core.analyze(minimalState()).battleTrusted, true);
   });
+
+  test("the merged variant can install catalysts the merge plan produces", () => {
+    const st = minimalState();
+    st.craft.crafting_level = 50;
+    st.ship = { laser_slot: { name: "Test Laser", level: 1, rarity: "normal", catalysts: [] } };
+    // 10 normal gathering_yield catalysts: the base plans install 2, the
+    // merge plan combines 5 of the leftovers into an uncommon projection, so
+    // the merged variant has a projected catalyst to install that no pure
+    // inventory plan can.
+    st.catalysts = Array.from({ length: 10 }, (_, i) =>
+      ({ _id: "g" + i, stat: "gathering_yield", rarity: "normal", range: 100, activity: "default" }));
+    const r = core.analyze(st);
+    assert.ok(Array.isArray(r.installsMerged), "installsMerged is missing");
+    assert.ok(Array.isArray(r.freedTextsMerged), "freedTextsMerged is missing");
+    const projected = r.installsMerged.filter(a => a.add.projected);
+    assert.ok(projected.length >= 1, "expected the merged variant to install a projected catalyst");
+    assert.match(projected[0].add.id, /^projected\|/);
+    // The projected candidate is uncommon (merge of 5 normals).
+    assert.equal(projected[0].add.rarity, "uncommon");
+  });
 });
 
 // A Voyager expedition reads the EXPLORING profile of the laser and probes:
