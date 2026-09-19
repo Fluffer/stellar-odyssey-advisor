@@ -84,7 +84,6 @@ function petHoursToNextLevel(level, currentXp, boost, food, autofeed, autofeedLi
 
 // Steady-state average food over one auto-feed/floor cycle (display info).
 function petAvgFood(food, autofeed, autofeedLimit) {
-  const lows = autofeed && autofeedLimit <= 100 ? autofeedLimit : PET_FOOD_FLOOR;
   let f = food, sum = 0, n = 0;
   for (let i = 0; i < 30; i++) {
     sum += f; n++;

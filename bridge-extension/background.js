@@ -14,7 +14,7 @@ function badge(text, color) {
   try {
     chrome.action.setBadgeText({ text });
     chrome.action.setBadgeBackgroundColor({ color });
-  } catch (_) {}
+  } catch {}
 }
 
 async function gameTab() {
@@ -68,7 +68,7 @@ async function push(reason) {
     badge(ok ? "on" : "err", ok ? "#2a7" : "#a33");
     if (!ok) console.warn("[so-advisor] read failed:", state && state.error);
     return ok;
-  } catch (e) {
+  } catch {
     badge("srv", "#a33"); // advisor server not running
     return false;
   }
@@ -84,7 +84,7 @@ async function serverReachable() {
   try {
     const r = await fetch(SERVER + "/api/bridge/status", { cache: "no-store" });
     return r.ok;
-  } catch (_) { return false; }
+  } catch { return false; }
 }
 async function ensureServer() {
   if (await serverReachable()) return true;
@@ -115,7 +115,7 @@ async function pollLoop() {
   try {
     for (;;) {
       let r;
-      try { r = await fetch(SERVER + "/api/bridge/poll"); } catch (_) { break; }
+      try { r = await fetch(SERVER + "/api/bridge/poll"); } catch { break; }
       if (!r.ok) break;
       const j = await r.json();
       if (j && j.read) await push("request");

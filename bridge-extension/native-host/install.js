@@ -62,8 +62,8 @@ function install(extensionId) {
 }
 
 function uninstall() {
-  for (const key of REG_KEYS) { try { reg(["delete", key, "/f"]); } catch (_) {} }
-  try { fs.unlinkSync(MANIFEST); } catch (_) {}
+  for (const key of REG_KEYS) { try { reg(["delete", key, "/f"]); } catch {} }
+  try { fs.unlinkSync(MANIFEST); } catch {}
 }
 
 if (require.main === module) {

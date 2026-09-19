@@ -153,7 +153,7 @@ async function appendHistory(entry) {
       const { capturedAt, ...rest } = JSON.parse(lines[lines.length - 1]);
       lastMetrics = rest;
     }
-  } catch (_) { /* missing or corrupt: nothing to dedupe against */ }
+  } catch { /* missing or corrupt: nothing to dedupe against */ }
   const { capturedAt, ...rest } = entry;
   if (lastMetrics && JSON.stringify(lastMetrics) === JSON.stringify(rest)) return;
   await fs.promises.appendFile(file, JSON.stringify(entry) + "\n");
@@ -163,10 +163,10 @@ async function appendHistory(entry) {
 // without starting this server).
 async function attachRecentIncome(data) {
   if (!data || !data.base || !data.base.income) return;
-  let lines = [];
+  let lines;
   try {
     lines = (await fs.promises.readFile(path.join(SNAP_DIR, "history.jsonl"), "utf8")).split("\n").filter(Boolean);
-  } catch (_) { return; /* no history yet */ }
+  } catch { return; /* no history yet */ }
   data.base.income.recent = recentIncome(lines, Date.now(), Number(data.base.income.lifetimeCredits));
   if (data.base.stellarium) {
     const heldNow = data.base.live ? Number(data.base.live.stellarium) : NaN;
@@ -325,7 +325,7 @@ const server = http.createServer(async (req, res) => {
       const data = await fs.promises.readFile(path.join(SNAP_DIR, files[files.length - 1]), "utf8");
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(data);
-    } catch (e) {
+    } catch {
       json(res, 200, { empty: true });
     }
     return;
@@ -336,10 +336,10 @@ const server = http.createServer(async (req, res) => {
       const entries = [];
       for (const line of content.split("\n")) {
         if (!line.trim()) continue;
-        try { entries.push(JSON.parse(line)); } catch (_) { /* skip corrupt line */ }
+        try { entries.push(JSON.parse(line)); } catch { /* skip corrupt line */ }
       }
       json(res, 200, { entries });
-    } catch (e) {
+    } catch {
       json(res, 200, { entries: [] });
     }
     return;

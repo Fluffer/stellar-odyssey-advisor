@@ -13,3 +13,7 @@ public/icons.svg
 
 # machine-specific native messaging host manifest (absolute paths), written by install.js
 bridge-extension/native-host/com.stellar_odyssey.advisor_launcher.json
+
+# node runtime deps and local tool state (opencode agent config)
+node_modules/
+.opencode/

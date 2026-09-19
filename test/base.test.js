@@ -409,7 +409,7 @@ describe("BaseMath.planBase (pre-founding, live-shaped input)", () => {
 });
 
 describe("lib/base.js planBaseFromState", () => {
-  const { planBaseFromState, buildBaseInput } = require("../lib/base.js");
+  const { planBaseFromState } = require("../lib/base.js");
   const liveState = () => ({
     lab: { buildings: [
       { building: "Circuit Integration Facility", level: 20, currency_use: ["silicon", "cobalt"], material_use: [], produce: ["microcircuits"], input: 1000, output: 1, timer: 30 },

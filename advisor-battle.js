@@ -100,7 +100,6 @@ function simulateBattle(player, opts) {
   mob.maxHull = mob.hull;
 
   const defense = Math.min(cb.defense ?? 0, NPC.DefenseCap);
-  const originalDmg = mob.damage;
   if (defense > 0) mob.damage = Math.max(1, Math.floor(mob.damage * (1 - defense / 100)));
 
   const armorPen = Math.min(cb.armor_penetration ?? 0, NPC.ArmorPenetrationCap);
@@ -112,7 +111,6 @@ function simulateBattle(player, opts) {
   const dot = cb.dot ?? 0;
   const lifesteal = cb.lifesteal ?? 0;
 
-  const npcName = npc ? npc.name.slice(0, -1) : "npc";
   const clones = player.clones.map(cl => ({
     name: cl.name,
     damage: playerDamage,
@@ -146,7 +144,6 @@ function simulateBattle(player, opts) {
 
   let stunLeft = 0, dotLeft = 0;
   for (let round = 1; round < 100; round++) {
-    let roundDmg = 0;
     if (stun > 0 && stunLeft === 0 && roll(stun, rng)) stunLeft = NPC.StunDuration;
     if (stunLeft > 0) {
       stunLeft--;
@@ -164,7 +161,7 @@ function simulateBattle(player, opts) {
     }
     if (!clones.some(c => c.alive)) return "mob";
 
-    roundDmg = 0;
+    let roundDmg = 0;
     for (const cl of clones.filter(c => c.alive)) {
       const before = mob.hull;
       cloneAttack(cl, null);

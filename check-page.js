@@ -323,7 +323,7 @@ if (!snapshots.length) {
   guiEn.setLang("en");
   for (const tab of TABS) {
     let html;
-    try { html = guiEn.render(tab); } catch (e) { continue; }
+    try { html = guiEn.render(tab); } catch { continue; }
     for (const [kind, re] of REGIONS) {
       re.lastIndex = 0;
       let m;
