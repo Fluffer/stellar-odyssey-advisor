@@ -165,9 +165,9 @@ describe("base tab targets follow the Quantum server emulator", () => {
     const live = page();
     // Quantum server target defaults to its level 101: boost 101/2 x 1.81 = 91.4%.
     assert.match(live, /Quantum server unlockedpassive-microcircuits from 1010 of each91%4\.91/);
-    assert.doesNotMatch(live, /follow the emulator above/);
+    assert.doesNotMatch(live, /follow the emulator below/);
     const emu = page({ "advisor-base-qc-emu": JSON.stringify({ level: 101, tier: 10, efficiency: 100 }) });
-    assert.match(emu, /follow the emulator above: module efficiency skill 100% \(live 81%\), Quantum server tier 10 \(live 0\)/);
+    assert.match(emu, /follow the emulator below: module efficiency skill 100% \(live 81%\), Quantum server tier 10 \(live 0\)/);
     // 101/2 x 1.1 x 2 = 111.1% -> 5 sure + 11.1%: 5.11 expected.
     assert.match(emu, /Quantum server unlockedpassive-microcircuits from 1010 of each111%5\.11/);
     // The miner's target boost rises with the skill too: 188 x 2 = 376%.

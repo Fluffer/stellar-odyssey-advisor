@@ -140,9 +140,6 @@ function renderBase(b) {
   }
 
   // --- modules / targets ---
-  // --- Quantum server emulator: output at another level / tier / efficiency and the cost of each lever ---
-  html += baseQcEmuSection(b);
-
   html += '<h2>' + t('base.h_modules') + '</h2><div class="sub">' + t('base.modules_note') + '</div>';
   if (emulated) html += '<div class="sub" style="color:var(--warn)">' + t('base.modules_emulated', { eff: qc.efficiency, live: qc.now.efficiency, tier: qc.tier, live_tier: qc.now.tier }) + '</div>';
   const rows = plan.unlocks.map(u => Object.assign({}, BM.MODULES.find(m => m.name === u.name) || {}, u, plan.targets.find(t => t.name === u.name) || {}));
@@ -159,6 +156,9 @@ function renderBase(b) {
     { label: t('base.col_output_at_target'), numeric: true, getValue: r => r.outputAtTarget || 0, render: r => (r.outputAtTarget === undefined ? '-' : r.outputAtTarget.toFixed(2)) },
     { label: t('base.col_upkeep_at_target'), numeric: true, getValue: r => r.upkeepPerHourAtTarget || 0, render: r => (r.type === 'active' || (b.live && !r.unlocked)) ? '-' : fmtC(r.upkeepPerHourAtTarget || 0) },
   ]);
+
+  // --- Quantum server emulator: output at another level / tier / efficiency and the cost of each lever ---
+  html += baseQcEmuSection(b);
 
   // --- stockpile ---
   html += '<h2>' + t('base.h_stockpile') + '</h2>';
